@@ -4,7 +4,7 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
-#include <commctrl.h>
+//#include <commctrl.h>
 #include <string>
 #include <vector>
 
@@ -28,16 +28,16 @@ WSServerThread srv;
 void AddLogMessage(const std::string& message)
 {
     int len = GetWindowTextLength(hLogEdit);
-    SendMessage(hLogEdit, EM_SETSEL, (WPARAM)len, (LPARAM)len);
+    SendMessage(hLogEdit, EM_SETSEL, static_cast<WPARAM>(len), len);
     std::string msg = message + "\r\n";
 
     // Конвертируем UTF-8 в UTF-16
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, msg.c_str(), -1, NULL, 0);
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, msg.c_str(), -1, nullptr, 0);
     if (wlen > 0)
     {
         std::vector<wchar_t> wstr(wlen);
         MultiByteToWideChar(CP_UTF8, 0, msg.c_str(), -1, &wstr[0], wlen);
-        SendMessageW(hLogEdit, EM_REPLACESEL, 0, (LPARAM)wstr.data());
+        SendMessageW(hLogEdit, EM_REPLACESEL, 0, reinterpret_cast<LPARAM>(wstr.data()));
     }
 }
 
@@ -84,10 +84,11 @@ void ResizeControls(HWND hWnd)
     RECT rcClient;
     GetClientRect(hWnd, &rcClient);
 
-    const int left = 10;
-    const int top = 50;
-    const int rightMargin = 10;
-    const int bottomMargin = 10;
+    constexpr int left = 10;
+    constexpr int top = 50;
+
+    constexpr int rightMargin = 10;
+    constexpr int bottomMargin = 10;
 
     int width = rcClient.right - left - rightMargin;
     int height = rcClient.bottom - top - bottomMargin;
@@ -95,15 +96,14 @@ void ResizeControls(HWND hWnd)
     if (width < 0) width = 0;
     if (height < 0) height = 0;
 
-    SetWindowPos(hLogEdit, NULL, left, top, width, height, SWP_NOZORDER);
+    SetWindowPos(hLogEdit, nullptr, left, top, width, height, SWP_NOZORDER);
 }
 
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         case WM_COMMAND: {
-            int wmId = LOWORD(wParam);
-            switch (wmId) {
+            switch (LOWORD(wParam)) {
                 case IDB_START_SERVER: {
                     HWND hStartButton = GetDlgItem(hWnd, IDB_START_SERVER);
 
@@ -141,11 +141,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     ShowWindow(hWnd, SW_RESTORE);
                     SetForegroundWindow(hWnd);
                     break;
+                default: break;
             }
         }
         break;
         case WM_SIZE:
-            if (hLogEdit != NULL) {
+            if (hLogEdit != nullptr) {
                 ResizeControls(hWnd);
             }
             break;
@@ -169,7 +170,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_RESTORE, L"Восстановить");
                 InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Выход");
                 SetForegroundWindow(hWnd);
-                TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, curPoint.x, curPoint.y, 0, hWnd, NULL);
+                TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, curPoint.x, curPoint.y, 0, hWnd, nullptr);
                 DestroyMenu(hMenu);
             }
             break;
@@ -184,9 +185,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+
+    srv.sigOnNewConnection.connect(&onNewConnection);
+    srv.sigOnClosedConnection.connect(onClosedConnection);
+    srv.sigOnDataReceiving.connect(onDataReceiving);
+
     hInst = hInstance;
-    const char szWindowClass[] = "PhoneBarcodeScannerClass";
-    const char szTitle[] = "Phone Barcode Scanner";
+    constexpr char szWindowClass[] = "PhoneBarcodeScannerClass";
+    constexpr char szTitle[] = "Phone Barcode Scanner";
 
     WNDCLASSEX wcex;
     wcex.cbSize = sizeof(WNDCLASSEX);
@@ -195,30 +201,30 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = 0;
     wcex.hInstance = hInstance;
-    wcex.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wcex.lpszMenuName = NULL;
+    wcex.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcex.hbrBackground = reinterpret_cast<HBRUSH>((COLOR_WINDOW + 1));
+    wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = szWindowClass;
-    wcex.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
+    wcex.hIconSm = LoadIcon(nullptr, IDI_APPLICATION);
 
     if (!RegisterClassEx(&wcex)) return 1;
 
     HWND hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, NULL, NULL, hInstance, NULL);
+        CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, nullptr, nullptr, hInstance, nullptr);
 
     if (!hWnd) return 1;
 
     CreateWindowW(L"BUTTON", L"Запустить сервер", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  10, 10, 150, 30, hWnd, (HMENU)IDB_START_SERVER, hInstance, NULL);
+                  10, 10, 150, 30, hWnd, (HMENU)IDB_START_SERVER, hInstance, nullptr);
 
     CreateWindowW(L"BUTTON", L"Выход", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  170, 10, 100, 30, hWnd, (HMENU)IDB_EXIT, hInstance, NULL);
+                  170, 10, 100, 30, hWnd, (HMENU)IDB_EXIT, hInstance, nullptr);
 
     hLogEdit = CreateWindowW(L"EDIT", L"",
                              WS_VISIBLE | WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY |
                              WS_BORDER,
-                             10, 50, 360, 200, hWnd, (HMENU)IDC_LOG_EDIT, hInstance, NULL);
+                             10, 50, 360, 200, hWnd, (HMENU)IDC_LOG_EDIT, hInstance, nullptr);
 
     ResizeControls(hWnd);
 
@@ -227,7 +233,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     nid.uID = 1;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     strcpy(nid.szTip, "Phone Barcode Scanner");
     Shell_NotifyIcon(NIM_ADD, &nid);
 
@@ -235,19 +241,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     UpdateWindow(hWnd);
 
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
+    while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
-    return (int)msg.wParam;
+    return static_cast<int>(msg.wParam);
 }
 
 int main(int argc, char* argv[]) {
 
-    srv.sigOnNewConnection.connect(&onNewConnection);
-    srv.sigOnClosedConnection.connect(onClosedConnection);
-    srv.sigOnDataReceiving.connect(onDataReceiving);
-
-    return WinMain(GetModuleHandle(NULL), NULL, GetCommandLineA(), SW_SHOWNORMAL);
+    return WinMain(GetModuleHandle(nullptr), nullptr, GetCommandLineA(), SW_SHOWNORMAL);
 }
