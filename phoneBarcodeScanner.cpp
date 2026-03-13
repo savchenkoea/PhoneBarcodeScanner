@@ -1,39 +1,59 @@
-#include <iostream>
-#include <string>
 
-#if defined(_WINDOWS) || defined(WINAPI_FAMILY)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #endif
+#include <windows.h>
+#include <shellapi.h>
+#include <commctrl.h>
+#include <string>
+#include <vector>
 
 #include "WSErrors.h"
 #include "WSServerThread.h"
 
-void help()
+#pragma comment(lib, "comctl32.lib")
+
+#define IDB_START_SERVER 101
+#define IDB_EXIT 102
+#define IDC_LOG_EDIT 103
+#define WM_TRAYICON (WM_USER + 1)
+#define ID_TRAY_EXIT 201
+#define ID_TRAY_RESTORE 202
+
+HINSTANCE hInst;
+HWND hLogEdit;
+NOTIFYICONDATA nid = { 0 };
+WSServerThread srv;
+
+void AddLogMessage(const std::string& message)
 {
-    std::cout << "\t1 - Run server" << std::endl;
-    std::cout << "\t2 - Stop server" << std::endl;
-    std::cout << "\t3 - Send message" << std::endl;
-    std::cout << "\t4 - Close single connection" << std::endl;
-    std::cout << "\t5 - Close all connections" << std::endl;
-    std::cout << "\t6 - Display all current connections" << std::endl;
-    std::cout << "\t9 - Exit" << std::endl;
-    std::cout << "\tOther numbers - help" << std::endl;
+    int len = GetWindowTextLength(hLogEdit);
+    SendMessage(hLogEdit, EM_SETSEL, (WPARAM)len, (LPARAM)len);
+    std::string msg = message + "\r\n";
+
+    // Конвертируем UTF-8 в UTF-16
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, msg.c_str(), -1, NULL, 0);
+    if (wlen > 0)
+    {
+        std::vector<wchar_t> wstr(wlen);
+        MultiByteToWideChar(CP_UTF8, 0, msg.c_str(), -1, &wstr[0], wlen);
+        SendMessageW(hLogEdit, EM_REPLACESEL, 0, (LPARAM)wstr.data());
+    }
 }
 
 void onNewConnection(int id, const std::string& ip, int port)
 {
-    std::cout << "New connection: " << id << " " << ip << ":" << port << std::endl;
+    AddLogMessage("Новое соединение " + std::to_string(id) + " от " + ip + ":" + std::to_string(port));
 }
 
 void onClosedConnection(int id)
 {
-    std::cout << "Connection closed: " << id << std::endl;
+    AddLogMessage("Соединение "+ std::to_string(id) + "закрыто" );
 }
 
 void onDataReceiving(int id, const std::string& data)
 {
-    std::cout << "Data received from " << id << ": " << data << std::endl;
+    AddLogMessage(data);
 
     for (char ch : data)
     {
@@ -59,102 +79,175 @@ void onDataReceiving(int id, const std::string& data)
     SendInput(1, &input, sizeof(INPUT));
 }
 
-int main()
+void ResizeControls(HWND hWnd)
 {
-    short command(0);
+    RECT rcClient;
+    GetClientRect(hWnd, &rcClient);
 
-    WSServerThread srv;
+    const int left = 10;
+    const int top = 50;
+    const int rightMargin = 10;
+    const int bottomMargin = 10;
+
+    int width = rcClient.right - left - rightMargin;
+    int height = rcClient.bottom - top - bottomMargin;
+
+    if (width < 0) width = 0;
+    if (height < 0) height = 0;
+
+    SetWindowPos(hLogEdit, NULL, left, top, width, height, SWP_NOZORDER);
+}
+
+
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_COMMAND: {
+            int wmId = LOWORD(wParam);
+            switch (wmId) {
+                case IDB_START_SERVER: {
+                    HWND hStartButton = GetDlgItem(hWnd, IDB_START_SERVER);
+
+                    if (!srv.running()) {
+                        std::string address = "192.168.1.20";
+                        int port = 10001;
+                        int res = srv.run(address, port);
+
+                        if (res == ERROR_NO_ERROR) {
+                            AddLogMessage("Сервер запущен по адресу " + address + ":" + std::to_string(port));
+                            SetWindowTextW(hStartButton, L"Остановить сервер");
+                        } else {
+                            AddLogMessage("Ошибка запуска сервера: " + std::to_string(res));
+                            SetWindowTextW(hStartButton, L"Запустить сервер");
+                        }
+                    } else {
+                        int res = srv.stop();
+
+                        if (res == ERROR_NO_ERROR) {
+                            AddLogMessage("Сервер остановлен");
+                            SetWindowTextW(hStartButton, L"Запустить сервер");
+                        } else {
+                            AddLogMessage("Ошибка остановки сервера: " + std::to_string(res));
+                            SetWindowTextW(hStartButton, L"Остановить сервер");
+                        }
+                    }
+                    break;
+                }
+                case IDB_EXIT:
+                case ID_TRAY_EXIT:
+                    Shell_NotifyIcon(NIM_DELETE, &nid);
+                    PostQuitMessage(0);
+                    break;
+                case ID_TRAY_RESTORE:
+                    ShowWindow(hWnd, SW_RESTORE);
+                    SetForegroundWindow(hWnd);
+                    break;
+            }
+        }
+        break;
+        case WM_SIZE:
+            if (hLogEdit != NULL) {
+                ResizeControls(hWnd);
+            }
+            break;
+        case WM_SYSCOMMAND:
+            if ((wParam & 0xFFF0) == SC_MINIMIZE) {
+                ShowWindow(hWnd, SW_HIDE);
+                return 0;
+            }
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        case WM_CLOSE:
+            ShowWindow(hWnd, SW_HIDE);
+            break;
+        case WM_TRAYICON:
+            if (lParam == WM_LBUTTONDBLCLK) {
+                ShowWindow(hWnd, SW_RESTORE);
+                SetForegroundWindow(hWnd);
+            } else if (lParam == WM_RBUTTONUP) {
+                POINT curPoint;
+                GetCursorPos(&curPoint);
+                HMENU hMenu = CreatePopupMenu();
+                InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_RESTORE, L"Восстановить");
+                InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Выход");
+                SetForegroundWindow(hWnd);
+                TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, curPoint.x, curPoint.y, 0, hWnd, NULL);
+                DestroyMenu(hMenu);
+            }
+            break;
+        case WM_DESTROY:
+            Shell_NotifyIcon(NIM_DELETE, &nid);
+            PostQuitMessage(0);
+            break;
+        default:
+            return DefWindowProc(hWnd, message, wParam, lParam);
+    }
+    return 0;
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    hInst = hInstance;
+    const char szWindowClass[] = "PhoneBarcodeScannerClass";
+    const char szTitle[] = "Phone Barcode Scanner";
+
+    WNDCLASSEX wcex;
+    wcex.cbSize = sizeof(WNDCLASSEX);
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WndProc;
+    wcex.cbClsExtra = 0;
+    wcex.cbWndExtra = 0;
+    wcex.hInstance = hInstance;
+    wcex.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.lpszMenuName = NULL;
+    wcex.lpszClassName = szWindowClass;
+    wcex.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
+
+    if (!RegisterClassEx(&wcex)) return 1;
+
+    HWND hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, NULL, NULL, hInstance, NULL);
+
+    if (!hWnd) return 1;
+
+    CreateWindowW(L"BUTTON", L"Запустить сервер", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  10, 10, 150, 30, hWnd, (HMENU)IDB_START_SERVER, hInstance, NULL);
+
+    CreateWindowW(L"BUTTON", L"Выход", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  170, 10, 100, 30, hWnd, (HMENU)IDB_EXIT, hInstance, NULL);
+
+    hLogEdit = CreateWindowW(L"EDIT", L"",
+                             WS_VISIBLE | WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY |
+                             WS_BORDER,
+                             10, 50, 360, 200, hWnd, (HMENU)IDC_LOG_EDIT, hInstance, NULL);
+
+    ResizeControls(hWnd);
+
+    nid.cbSize = sizeof(NOTIFYICONDATA);
+    nid.hWnd = hWnd;
+    nid.uID = 1;
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.uCallbackMessage = WM_TRAYICON;
+    nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    strcpy(nid.szTip, "Phone Barcode Scanner");
+    Shell_NotifyIcon(NIM_ADD, &nid);
+
+    ShowWindow(hWnd, nCmdShow);
+    UpdateWindow(hWnd);
+
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    return (int)msg.wParam;
+}
+
+int main(int argc, char* argv[]) {
+
     srv.sigOnNewConnection.connect(&onNewConnection);
     srv.sigOnClosedConnection.connect(onClosedConnection);
     srv.sigOnDataReceiving.connect(onDataReceiving);
 
-
-    int id;
-    int res;
-
-    help();
-
-    do
-    {
-        std::cout << "Enter command (0-9): ";
-        std::cin >> command;
-
-        switch (command)
-        {
-        case 1:
-            {
-                std::string address = "192.168.1.20";
-                int port = 10001;
-                res = srv.run(address, port);
-
-                if (res == ERROR_NO_ERROR) std::cout << "Server started on address "
-                    << address << ":" << port << std::endl;
-                else std::cout << "Error code: " << res << std::endl;
-                break;
-            }
-        case 2:
-            {
-                res = srv.stop();
-
-                if (res == ERROR_NO_ERROR) std::cout << "Server stopped" << std::endl;
-                else std::cout << "Error code: " << res << std::endl;
-                break;
-            }
-        case 3:
-            {
-                std::string mes;
-                std::cout << "Enter thread id and message without spaces:";
-                std::cin >> id >> mes;
-                if (!mes.empty() && id != 0)
-                {
-                    res = srv.send(id, mes);
-                    if (res == ERROR_NO_ERROR) std::cout << "Message sent" << std::endl;
-                    else std::cout << "Error code: " << res << std::endl;
-                }
-                break;
-            }
-        case 4:
-            {
-                std::cout << "Enter thread id:";
-                std::cin >> id;
-                if (id != 0)
-                {
-                    res = srv.close(id);
-                    if (res == ERROR_NO_ERROR) std::cout << "Thread closed" << std::endl;
-                    else std::cout << "Error code: " << res << std::endl;
-                }
-                break;
-            }
-        case 5:
-            {
-                res = srv.closeAll();
-                if (res == ERROR_NO_ERROR) std::cout << "All thread are closed" << std::endl;
-                else std::cout << "Error code: " << res << std::endl;
-                break;
-            }
-        case 6:
-            {
-                std::vector<WSConnectionInfo> connections_list;
-                srv.getConnectionsList(connections_list);
-                std::cout << "Active connections:" << std::endl;
-                for (const auto& info : connections_list) std::cout << info.id << " " << info.ip << ":" << info.port << std::endl;
-                break;
-            }
-        case 9: break;
-        default:
-            {
-                help();
-            }
-        }
-
-    } while (command != 9);
-
-    res = srv.stop();
-    if (res == ERROR_NO_ERROR) std::cout << "Server stopped." << std::endl;
-    else {
-        std::cout << "Error code: " << res << std::endl;
-        return res;
-    }
-
-    return 0;
+    return WinMain(GetModuleHandle(NULL), NULL, GetCommandLineA(), SW_SHOWNORMAL);
 }
