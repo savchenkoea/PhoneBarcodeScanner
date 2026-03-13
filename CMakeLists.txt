@@ -66,7 +66,11 @@ list(APPEND SOURCES
         include/WSServerThread.cpp
         include/WSServerThread.h)
 
-add_executable(${TARGET} ${SOURCES})
+if (WIN32)
+    add_executable(${TARGET} WIN32 ${SOURCES})
+else()
+    add_executable(${TARGET} ${SOURCES})
+endif()
 
 target_include_directories(${TARGET} PRIVATE include)
 
