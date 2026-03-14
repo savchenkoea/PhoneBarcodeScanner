@@ -5,8 +5,10 @@
 #include <windows.h>
 #include <shellapi.h>
 //#include <commctrl.h>
+#include <memory>
 #include <string>
 #include <vector>
+#include <strsafe.h>
 
 #include "WSErrors.h"
 #include "WSServerThread.h"
@@ -20,63 +22,143 @@
 #define ID_TRAY_EXIT 201
 #define ID_TRAY_RESTORE 202
 
+constexpr UINT WM_ADD_LOG_MESSAGE = WM_APP + 1;
+
 HINSTANCE hInst;
+HWND hMainWnd;
 HWND hLogEdit;
 NOTIFYICONDATA nid = { 0 };
 WSServerThread srv;
 
-void AddLogMessage(const std::string& message)
+void AddLogMessageToEdit(const std::string& message)
 {
-    int len = GetWindowTextLength(hLogEdit);
-    SendMessage(hLogEdit, EM_SETSEL, static_cast<WPARAM>(len), len);
+    if (!hLogEdit || !IsWindow(hLogEdit))
+        return;
+
     std::string msg = message + "\r\n";
 
-    // Конвертируем UTF-8 в UTF-16
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, msg.c_str(), -1, nullptr, 0);
-    if (wlen > 0)
+    int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, msg.c_str(), -1, nullptr, 0);
+    if (wlen <= 0)
+        return;
+
+    std::vector<wchar_t> wstr(static_cast<size_t>(wlen));
+    int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, msg.c_str(), -1, wstr.data(), wlen);
+    if (converted <= 0)
+        return;
+
+    SendMessageW(hLogEdit, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+    SendMessageW(hLogEdit, EM_REPLACESEL, FALSE, reinterpret_cast<LPARAM>(wstr.data()));
+}
+
+void PostLogMessage(const std::string& message)
+{
+    if (hMainWnd == nullptr) {
+        return;
+    }
+
+    auto* text = new std::string(message);
+    if (!PostMessage(hMainWnd, WM_ADD_LOG_MESSAGE, 0, reinterpret_cast<LPARAM>(text)))
     {
-        std::vector<wchar_t> wstr(wlen);
-        MultiByteToWideChar(CP_UTF8, 0, msg.c_str(), -1, &wstr[0], wlen);
-        SendMessageW(hLogEdit, EM_REPLACESEL, 0, reinterpret_cast<LPARAM>(wstr.data()));
+        delete text;
     }
 }
 
 void onNewConnection(int id, const std::string& ip, int port)
 {
-    AddLogMessage("Новое соединение " + std::to_string(id) + " от " + ip + ":" + std::to_string(port));
+    PostLogMessage("Новое соединение " + std::to_string(id) + " от " + ip + ":" + std::to_string(port));
 }
 
 void onClosedConnection(int id)
 {
-    AddLogMessage("Соединение "+ std::to_string(id) + "закрыто" );
+    PostLogMessage("Соединение " + std::to_string(id) + " закрыто");
+}
+
+bool SendUnicodeChar(wchar_t ch)
+{
+    INPUT inputs[2] = {};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = 0;
+    inputs[0].ki.wScan = ch;
+    inputs[0].ki.dwFlags = KEYEVENTF_UNICODE;
+
+    inputs[1] = inputs[0];
+    inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+
+    return SendInput(2, inputs, sizeof(INPUT)) == 2;
+}
+
+bool SendVirtualKey(WORD vk)
+{
+    INPUT inputs[2] = {};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = vk;
+    inputs[0].ki.dwFlags = 0;
+
+    inputs[1] = inputs[0];
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+
+    return SendInput(2, inputs, sizeof(INPUT)) == 2;
+}
+
+std::wstring Utf8ToWide(const std::string& text)
+{
+    if (text.empty()) {
+        return {};
+    }
+
+    const int size = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        text.data(),
+        static_cast<int>(text.size()),
+        nullptr,
+        0);
+
+    if (size <= 0) {
+        return {};
+    }
+
+    std::wstring wide(size, L'\0');
+
+    const int converted = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        text.data(),
+        static_cast<int>(text.size()),
+        wide.data(),
+        size);
+
+    if (converted != size) {
+        return {};
+    }
+
+    return wide;
 }
 
 void onDataReceiving(int id, const std::string& data)
 {
-    AddLogMessage(data);
+    PostLogMessage(data);
 
-    for (char ch : data)
+    const std::wstring wideData = Utf8ToWide(data);
+    if (wideData.empty() && !data.empty())
     {
-        INPUT input = {0};
-        input.type = INPUT_KEYBOARD;
-        input.ki.wVk = 0;
-        input.ki.wScan = ch;
-        input.ki.dwFlags = KEYEVENTF_UNICODE;
-        SendInput(1, &input, sizeof(INPUT));
-
-        input.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-        SendInput(1, &input, sizeof(INPUT));
+        PostLogMessage("Ошибка: некорректные UTF-8 данные");
+        return;
     }
 
-    // Press Enter key
-    INPUT input = {0};
-    input.type = INPUT_KEYBOARD;
-    input.ki.wVk = VK_RETURN;
-    input.ki.dwFlags = 0;
-    SendInput(1, &input, sizeof(INPUT));
+    for (wchar_t ch : wideData)
+    {
+        if (!SendUnicodeChar(ch))
+        {
+            PostLogMessage("Ошибка SendInput при отправке символов");
+            return;
+        }
+    }
 
-    input.ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(1, &input, sizeof(INPUT));
+    if (!SendVirtualKey(VK_RETURN))
+    {
+        PostLogMessage("Ошибка SendInput при отправке Enter");
+    }
 }
 
 void ResizeControls(HWND hWnd)
@@ -102,31 +184,37 @@ void ResizeControls(HWND hWnd)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
+        case WM_ADD_LOG_MESSAGE:
+        {
+            std::unique_ptr<std::string> text(reinterpret_cast<std::string*>(lParam));
+            AddLogMessageToEdit(*text);
+            break;
+        }
         case WM_COMMAND: {
             switch (LOWORD(wParam)) {
                 case IDB_START_SERVER: {
                     HWND hStartButton = GetDlgItem(hWnd, IDB_START_SERVER);
 
                     if (!srv.running()) {
-                        std::string address = "192.168.1.20";
+                        std::string address = "127.0.0.1";
                         int port = 10001;
                         int res = srv.run(address, port);
 
                         if (res == ERROR_NO_ERROR) {
-                            AddLogMessage("Сервер запущен по адресу " + address + ":" + std::to_string(port));
+                            AddLogMessageToEdit("Сервер запущен по адресу " + address + ":" + std::to_string(port));
                             SetWindowTextW(hStartButton, L"Остановить сервер");
                         } else {
-                            AddLogMessage("Ошибка запуска сервера: " + std::to_string(res));
+                            AddLogMessageToEdit("Ошибка запуска сервера: " + std::to_string(res));
                             SetWindowTextW(hStartButton, L"Запустить сервер");
                         }
                     } else {
                         int res = srv.stop();
 
                         if (res == ERROR_NO_ERROR) {
-                            AddLogMessage("Сервер остановлен");
+                            AddLogMessageToEdit("Сервер остановлен");
                             SetWindowTextW(hStartButton, L"Запустить сервер");
                         } else {
-                            AddLogMessage("Ошибка остановки сервера: " + std::to_string(res));
+                            AddLogMessageToEdit("Ошибка остановки сервера: " + std::to_string(res));
                             SetWindowTextW(hStartButton, L"Остановить сервер");
                         }
                     }
@@ -215,6 +303,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     if (!hWnd) return 1;
 
+    hMainWnd = hWnd;
+
     CreateWindowW(L"BUTTON", L"Запустить сервер", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
                   10, 10, 150, 30, hWnd, (HMENU)IDB_START_SERVER, hInstance, nullptr);
 
@@ -234,7 +324,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
     nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
-    strcpy(nid.szTip, "Phone Barcode Scanner");
+    lstrcpyn(nid.szTip, TEXT("Phone Barcode Scanner"), ARRAYSIZE(nid.szTip));
     Shell_NotifyIcon(NIM_ADD, &nid);
 
     ShowWindow(hWnd, nCmdShow);

@@ -54,29 +54,30 @@ IOThread::~IOThread()
 }
 
 // функция останавливает работу потока чтения из веб-сокета
-int IOThread::close() {
+int IOThread::close()
+{
     beast::error_code ec;
+
+    // устанавливаем флаг завершения потока чтения
+    this->stopThread.store(true);
+
+    // если веб-сокет открыт...
+    if (this->ws.is_open())
+    {
+        // Для прерывания синхронного read() необходимо закрыть сам TCP сокет.
+        // cancel() работает только для async операций.
+        // ws.close() здесь вызывать опасно, так как сокет занят в другом потоке.
+
+        // Закрываем прием и передачу данных на уровне TCP
+        this->ws.next_layer().shutdown(tcp::socket::shutdown_both, ec); // NOLINT(*-unused-return-value)
+
+        // Закрываем дескриптор сокета
+        this->ws.next_layer().close(ec); // NOLINT(*-unused-return-value)
+    }
 
     // проверяем что поток еще существует
     if (this->t.joinable())
     {
-        // устанавливаем флаг завершения потока чтения
-        this->stopThread.store(true);
-
-        // если веб-сокет открыт...
-        if (this->ws.is_open())
-        {
-            // Для прерывания синхронного read() необходимо закрыть сам TCP сокет.
-            // cancel() работает только для async операций.
-            // ws.close() здесь вызывать опасно, так как сокет занят в другом потоке.
-            
-            // Закрываем прием и передачу данных на уровне TCP
-            this->ws.next_layer().shutdown(tcp::socket::shutdown_both, ec); // NOLINT(*-unused-return-value)
-            
-            // Закрываем дескриптор сокета
-            this->ws.next_layer().close(ec); // NOLINT(*-unused-return-value)
-        }
-
         // и ожидаем завершения дочернего потока
         this->t.join();
     }
