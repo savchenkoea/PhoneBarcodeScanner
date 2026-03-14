@@ -2,25 +2,41 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+
 #include <windows.h>
 #include <shellapi.h>
-//#include <commctrl.h>
 #include <memory>
 #include <string>
 #include <vector>
 #include <strsafe.h>
+#include <commctrl.h>
 
 #include "WSErrors.h"
 #include "WSServerThread.h"
+#include "include/SettingsManager.h"
+#include "include/StringUtils.h"
+#include "include/InputEmulator.h"
 
 #pragma comment(lib, "comctl32.lib")
 
 #define IDB_START_SERVER 101
 #define IDB_EXIT 102
+#define IDB_SETTINGS 104
 #define IDC_LOG_EDIT 103
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_EXIT 201
 #define ID_TRAY_RESTORE 202
+
+// Константы для окна настроек
+#define IDC_IP_ADDRESS 301
+#define IDC_PORT 302
+#define IDC_PREFIX 303
+#define IDC_POSTFIX1 304
+#define IDC_POSTFIX2 305
+#define IDB_SAVE_SETTINGS 306
+
+// Удалены AppSettings, settings, GetExeDirectory, GetSettingsFilePath, SaveSettings, LoadSettings,
+// так как они теперь в SettingsManager.
 
 constexpr UINT WM_ADD_LOG_MESSAGE = WM_APP + 1;
 
@@ -35,19 +51,12 @@ void AddLogMessageToEdit(const std::string& message)
     if (!hLogEdit || !IsWindow(hLogEdit))
         return;
 
-    std::string msg = message + "\r\n";
-
-    int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, msg.c_str(), -1, nullptr, 0);
-    if (wlen <= 0)
-        return;
-
-    std::vector<wchar_t> wstr(static_cast<size_t>(wlen));
-    int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, msg.c_str(), -1, wstr.data(), wlen);
-    if (converted <= 0)
+    std::wstring wmsg = StringUtils::Utf8ToWide(message + "\r\n");
+    if (wmsg.empty())
         return;
 
     SendMessageW(hLogEdit, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
-    SendMessageW(hLogEdit, EM_REPLACESEL, FALSE, reinterpret_cast<LPARAM>(wstr.data()));
+    SendMessageW(hLogEdit, EM_REPLACESEL, FALSE, reinterpret_cast<LPARAM>(wmsg.c_str()));
 }
 
 void PostLogMessage(const std::string& message)
@@ -73,92 +82,22 @@ void onClosedConnection(int id)
     PostLogMessage("Соединение " + std::to_string(id) + " закрыто");
 }
 
-bool SendUnicodeChar(wchar_t ch)
-{
-    INPUT inputs[2] = {};
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = 0;
-    inputs[0].ki.wScan = ch;
-    inputs[0].ki.dwFlags = KEYEVENTF_UNICODE;
-
-    inputs[1] = inputs[0];
-    inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-
-    return SendInput(2, inputs, sizeof(INPUT)) == 2;
-}
-
-bool SendVirtualKey(WORD vk)
-{
-    INPUT inputs[2] = {};
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = vk;
-    inputs[0].ki.dwFlags = 0;
-
-    inputs[1] = inputs[0];
-    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-
-    return SendInput(2, inputs, sizeof(INPUT)) == 2;
-}
-
-std::wstring Utf8ToWide(const std::string& text)
-{
-    if (text.empty()) {
-        return {};
-    }
-
-    const int size = MultiByteToWideChar(
-        CP_UTF8,
-        MB_ERR_INVALID_CHARS,
-        text.data(),
-        static_cast<int>(text.size()),
-        nullptr,
-        0);
-
-    if (size <= 0) {
-        return {};
-    }
-
-    std::wstring wide(size, L'\0');
-
-    const int converted = MultiByteToWideChar(
-        CP_UTF8,
-        MB_ERR_INVALID_CHARS,
-        text.data(),
-        static_cast<int>(text.size()),
-        wide.data(),
-        size);
-
-    if (converted != size) {
-        return {};
-    }
-
-    return wide;
-}
+// Удалены SendUnicodeChar, SendVirtualKey, Utf8ToWide,
+// так как они теперь в соответствующих хедерах.
 
 void onDataReceiving(int id, const std::string& data)
 {
     PostLogMessage(data);
 
-    const std::wstring wideData = Utf8ToWide(data);
+    const std::wstring wideData = StringUtils::Utf8ToWide(data);
     if (wideData.empty() && !data.empty())
     {
         PostLogMessage("Ошибка: некорректные UTF-8 данные");
         return;
     }
 
-    for (wchar_t ch : wideData)
-    {
-        if (!SendUnicodeChar(ch))
-        {
-            PostLogMessage("Ошибка SendInput при отправке символов");
-            return;
-        }
-    }
-
-    if (!SendVirtualKey(VK_RETURN))
-    {
-        PostLogMessage("Ошибка SendInput при отправке Enter");
-    }
+    const auto& s = SettingsManager::getInstance().getSettings();
+    InputEmulator::SendString(wideData, s.prefix, s.postfix1, s.postfix2);
 }
 
 void ResizeControls(HWND hWnd)
@@ -182,6 +121,144 @@ void ResizeControls(HWND hWnd)
 }
 
 
+LRESULT CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        {
+            const auto& settings = SettingsManager::getInstance().getSettings();
+            HWND hIp = CreateWindowExW(0, WC_IPADDRESSW, nullptr, WS_CHILD | WS_VISIBLE | WS_BORDER, 120, 10, 150, 20,
+                                       hDlg, reinterpret_cast<HMENU>(IDC_IP_ADDRESS), hInst, nullptr);
+            unsigned char b1, b2, b3, b4;
+            if (sscanf_s(settings.ip.c_str(), "%hhu.%hhu.%hhu.%hhu", &b1, &b2, &b3, &b4) == 4)
+            {
+                SendMessage(hIp, IPM_SETADDRESS, 0, MAKEIPADDRESS(b1, b2, b3, b4));
+            }
+
+            CreateWindowExW(0, L"STATIC", L"IP адрес:", WS_CHILD | WS_VISIBLE, 10, 10, 100, 20, hDlg, nullptr, hInst,
+                            nullptr);
+            CreateWindowExW(0, L"STATIC", L"Порт:", WS_CHILD | WS_VISIBLE, 10, 40, 100, 20, hDlg, nullptr, hInst,
+                            nullptr);
+            HWND hPort = CreateWindowExA(0, "EDIT", std::to_string(settings.port).c_str(),
+                                         WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 120, 40, 60, 20, hDlg,
+                                         reinterpret_cast<HMENU>(IDC_PORT), hInst, nullptr);
+            SendMessage(hPort, EM_SETLIMITTEXT, 5, 0);
+
+            CreateWindowExW(0, L"STATIC", L"Префикс:", WS_CHILD | WS_VISIBLE, 10, 70, 100, 20, hDlg, nullptr, hInst,
+                            nullptr);
+            HWND hPrefix = CreateWindowExW(0, L"COMBOBOX", nullptr,
+                                           WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 120, 70, 150, 200,
+                                           hDlg, reinterpret_cast<HMENU>(IDC_PREFIX), hInst, nullptr);
+
+            CreateWindowExW(0, L"STATIC", L"Постфикс 1:", WS_CHILD | WS_VISIBLE, 10, 100, 100, 20, hDlg, nullptr, hInst,
+                            nullptr);
+            HWND hPostfix1 = CreateWindowExW(0, L"COMBOBOX", nullptr,
+                                             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 120, 100, 150, 200,
+                                             hDlg, reinterpret_cast<HMENU>(IDC_POSTFIX1), hInst, nullptr);
+
+            CreateWindowExW(0, L"STATIC", L"Постфикс 2:", WS_CHILD | WS_VISIBLE, 10, 130, 100, 20, hDlg, nullptr, hInst,
+                            nullptr);
+            HWND hPostfix2 = CreateWindowExW(0, L"COMBOBOX", nullptr,
+                                             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 120, 130, 150, 200,
+                                             hDlg, reinterpret_cast<HMENU>(IDC_POSTFIX2), hInst, nullptr);
+
+            CreateWindowExW(0, L"BUTTON", L"Сохранить", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 100, 170, 100, 30, hDlg,
+                            reinterpret_cast<HMENU>(IDB_SAVE_SETTINGS), hInst, nullptr);
+
+            auto fillCombo = [&](HWND hCombo, int selectedVal) {
+                SendMessageW(hCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"<NONE>"));
+                for (int i = 1; i < 128; ++i)
+                {
+                    wchar_t buf[64];
+                    const wchar_t* name = L"";
+                    if (i == 13) name = L"CR";
+                    else if (i == 10) name = L"LF";
+                    else if (i == 8) name = L"BS";
+                    else if (i == 9) name = L"TAB";
+                    else if (i == 27) name = L"ESC";
+                    else if (i == 32) name = L"Space";
+
+                    if (*name)
+                    {
+                        swprintf(buf, 64, L"%d(%s)", i, name);
+                    }
+                    else if (isprint(i))
+                    {
+                        swprintf(buf, 64, L"%d(%c)", i, static_cast<wchar_t>(i));
+                    }
+                    else
+                    {
+                        swprintf(buf, 64, L"%d", i);
+                    }
+                    SendMessageW(hCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(buf));
+                }
+                SendMessage(hCombo, CB_SETCURSEL, selectedVal, 0);
+            };
+
+            fillCombo(hPrefix, settings.prefix);
+            fillCombo(hPostfix1, settings.postfix1);
+            fillCombo(hPostfix2, settings.postfix2);
+
+            return TRUE;
+        }
+    case WM_COMMAND:
+        {
+            if (LOWORD(wParam) == IDB_SAVE_SETTINGS)
+            {
+                AppSettings settings;
+                HWND hIp = GetDlgItem(hDlg, IDC_IP_ADDRESS);
+                DWORD dwIp;
+                SendMessage(hIp, IPM_GETADDRESS, 0, reinterpret_cast<LPARAM>(&dwIp));
+                char ipBuf[32];
+                sprintf_s(ipBuf, sizeof(ipBuf), "%u.%u.%u.%u", FIRST_IPADDRESS(dwIp), SECOND_IPADDRESS(dwIp),
+                          THIRD_IPADDRESS(dwIp),
+                          FOURTH_IPADDRESS(dwIp));
+                settings.ip = ipBuf;
+
+                char portBuf[16];
+                GetDlgItemTextA(hDlg, IDC_PORT, portBuf, sizeof(portBuf));
+                settings.port = strtol(portBuf, nullptr, 10);
+                if (settings.port < 1) settings.port = 1;
+                if (settings.port > 65535) settings.port = 65535;
+
+                settings.prefix = static_cast<int>(SendMessage(GetDlgItem(hDlg, IDC_PREFIX), CB_GETCURSEL, 0, 0));
+                settings.postfix1 = static_cast<int>(SendMessage(GetDlgItem(hDlg, IDC_POSTFIX1), CB_GETCURSEL, 0, 0));
+                settings.postfix2 = static_cast<int>(SendMessage(GetDlgItem(hDlg, IDC_POSTFIX2), CB_GETCURSEL, 0, 0));
+
+                SettingsManager::getInstance().setSettings(settings);
+                SettingsManager::getInstance().save();
+                EndDialog(hDlg, IDOK);
+                return TRUE;
+            }
+            break;
+        }
+    case WM_CLOSE:
+        EndDialog(hDlg, IDCANCEL);
+        return TRUE;
+    default: return FALSE;
+    }
+    return FALSE;
+}
+
+void ShowSettingsDialog(HWND hWndParent) {
+    [[maybe_unused]] auto lpDialogFunc = [](HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) -> INT_PTR {
+        return (INT_PTR)SettingsDlgProc(hDlg, msg, wp, lp);
+    };
+
+    // Создаем шаблон диалога в памяти (DLGTEMPLATE)
+    HGLOBAL hgbl = GlobalAlloc(GMEM_ZEROINIT, 1024);
+    if (!hgbl) return;
+    auto lpdt = static_cast<LPDLGTEMPLATE>(GlobalLock(hgbl));
+    lpdt->style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+    lpdt->cdit = 0;
+    lpdt->x = 0; lpdt->y = 0; lpdt->cx = 150; lpdt->cy = 110;
+    GlobalUnlock(hgbl);
+
+    DialogBoxIndirectParamA(hInst, lpdt, hWndParent, (DLGPROC)SettingsDlgProc, 0);
+    GlobalFree(hgbl);
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         case WM_ADD_LOG_MESSAGE:
@@ -194,14 +271,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             switch (LOWORD(wParam)) {
                 case IDB_START_SERVER: {
                     HWND hStartButton = GetDlgItem(hWnd, IDB_START_SERVER);
+                    const auto& settings = SettingsManager::getInstance().getSettings();
 
                     if (!srv.running()) {
-                        std::string address = "127.0.0.1";
-                        int port = 10001;
-                        int res = srv.run(address, port);
+                        int res = srv.run(settings.ip, settings.port);
 
                         if (res == ERROR_NO_ERROR) {
-                            AddLogMessageToEdit("Сервер запущен по адресу " + address + ":" + std::to_string(port));
+                            AddLogMessageToEdit("Сервер запущен по адресу " + settings.ip + ":" + std::to_string(settings.port));
                             SetWindowTextW(hStartButton, L"Остановить сервер");
                         } else {
                             AddLogMessageToEdit("Ошибка запуска сервера: " + std::to_string(res));
@@ -217,6 +293,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                             AddLogMessageToEdit("Ошибка остановки сервера: " + std::to_string(res));
                             SetWindowTextW(hStartButton, L"Остановить сервер");
                         }
+                    }
+                    break;
+                }
+                case IDB_SETTINGS: {
+                    if (srv.running()) {
+                        MessageBoxW(hWnd, L"Остановите сервер перед изменением настроек.", L"Предупреждение", MB_OK | MB_ICONWARNING);
+                    } else {
+                        ShowSettingsDialog(hWnd);
                     }
                     break;
                 }
@@ -305,11 +389,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     hMainWnd = hWnd;
 
+    SettingsManager::getInstance().load();
+
     CreateWindowW(L"BUTTON", L"Запустить сервер", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
                   10, 10, 150, 30, hWnd, (HMENU)IDB_START_SERVER, hInstance, nullptr);
 
+    CreateWindowW(L"BUTTON", L"Настройка", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  170, 10, 100, 30, hWnd, (HMENU)IDB_SETTINGS, hInstance, nullptr);
+
     CreateWindowW(L"BUTTON", L"Выход", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  170, 10, 100, 30, hWnd, (HMENU)IDB_EXIT, hInstance, nullptr);
+                  280, 10, 80, 30, hWnd, (HMENU)IDB_EXIT, hInstance, nullptr);
 
     hLogEdit = CreateWindowW(L"EDIT", L"",
                              WS_VISIBLE | WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY |
