@@ -13,9 +13,9 @@
 
 #include "WSErrors.h"
 #include "WSServerThread.h"
-#include "include/SettingsManager.h"
-#include "include/StringUtils.h"
-#include "include/InputEmulator.h"
+#include "SettingsManager.h"
+#include "StringUtils.h"
+#include "InputEmulator.h"
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -34,9 +34,6 @@
 #define IDC_POSTFIX1 304
 #define IDC_POSTFIX2 305
 #define IDB_SAVE_SETTINGS 306
-
-// Удалены AppSettings, settings, GetExeDirectory, GetSettingsFilePath, SaveSettings, LoadSettings,
-// так как они теперь в SettingsManager.
 
 constexpr UINT WM_ADD_LOG_MESSAGE = WM_APP + 1;
 
@@ -171,7 +168,7 @@ LRESULT CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
                 for (int i = 1; i < 128; ++i)
                 {
                     wchar_t buf[64];
-                    const wchar_t* name = L"";
+                    auto name = L"";
                     if (i == 13) name = L"CR";
                     else if (i == 10) name = L"LF";
                     else if (i == 8) name = L"BS";

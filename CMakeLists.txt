@@ -59,6 +59,9 @@ endif()
 
 list(APPEND SOURCES
         phoneBarcodeScanner.cpp
+        include/SettingsManager.h
+        include/StringUtils.h
+        include/InputEmulator.h
         include/WSErrors.h
         include/WSInclude.h
         include/WSIOThread.cpp
