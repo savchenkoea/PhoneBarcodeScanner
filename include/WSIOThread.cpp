@@ -140,6 +140,18 @@ int IOThread::getClientPort() const
     return this->client_port;
 }
 
+// функция возвращает признак того, что клиент авторизован
+bool IOThread::authenticated() const
+{
+    return this->isAuthenticated.load();
+}
+
+// функция устанавливает признак того, что клиент авторизован
+void IOThread::setAuthenticated(bool value)
+{
+    this->isAuthenticated.store(value);
+}
+
 // процедура потока, принимающего сообщения из веб-сокета
 void IOThread::threadRoutine()
 {

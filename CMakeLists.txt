@@ -56,6 +56,12 @@ if(NOT Boost_FOUND)
     message(FATAL_ERROR "Boost library not found or version is too old (required 1.75+)")
 endif()
 
+# Ищем библиотеку libqrencode
+find_path(QRENCODE_INCLUDE_DIR NAMES qrencode.h)
+find_library(QRENCODE_LIBRARY_RELEASE qrencode)
+find_library(QRENCODE_LIBRARY_DEBUG qrencoded)
+set(QRENCODE_LIBRARIES optimized ${QRENCODE_LIBRARY_RELEASE} debug ${QRENCODE_LIBRARY_DEBUG})
+
 
 list(APPEND SOURCES
         phoneBarcodeScanner.cpp
@@ -75,9 +81,9 @@ else()
     add_executable(${TARGET} ${SOURCES})
 endif()
 
-target_include_directories(${TARGET} PRIVATE include)
+target_include_directories(${TARGET} PRIVATE include ${QRENCODE_INCLUDE_DIR})
 
-target_link_libraries(${TARGET} PRIVATE Boost::system)
+target_link_libraries(${TARGET} PRIVATE Boost::system ${QRENCODE_LIBRARIES})
 
 if (WIN32)
     # Определение архитектуры для Windows

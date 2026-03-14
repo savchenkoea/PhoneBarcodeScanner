@@ -57,6 +57,12 @@ public:
     // функция возвращает удаленный порт клиента
     int getClientPort() const;
 
+    // функция возвращает признак того, что клиент авторизован
+    bool authenticated() const;
+
+    // функция устанавливает признак того, что клиент авторизован
+    void setAuthenticated(bool value);
+
 private:
     // веб-сокет, через который производится обмен данными в данном потоке
     websocket::stream<tcp::socket> ws;
@@ -78,6 +84,9 @@ private:
 
     // удаленный порт клиента
     int client_port;
+
+    // флаг авторизации клиента
+    std::atomic<bool> isAuthenticated{false};
 
 
     // процедура потока, принимающего сообщения из веб-сокета

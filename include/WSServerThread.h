@@ -75,6 +75,21 @@ public:
     // функция возвращает информацию о соединении
     int getConnectionInfo(int id, WSConnectionInfo &info);
 
+    // функция проверяет авторизацию клиента
+    bool isAuthenticated(int id);
+
+    // функция устанавливает статус авторизации клиента
+    void setAuthenticated(int id, bool value);
+
+    // сигнал об изменении passkey
+    signals2::signal<void(std::string)> sigPasskeyChanged;
+
+    // функция возвращает текущий passkey
+    std::string getPasskey() const;
+
+    // функция генерирует новый passkey
+    void generateNewPasskey();
+
 private:
     // Внутренние свойства объекта:
 
@@ -103,6 +118,9 @@ private:
     // В переменной nextThreadId хранится идентификатор следующего потока ввода-вывода.
     // Начинаем с 1 и для каждого следующего потока увеличиваем на 1
     int nextThreadId{0};
+
+    // Текущий passkey для авторизации клиентов
+    std::string currentPasskey;
 
     // Внутренние методы объекта:
 

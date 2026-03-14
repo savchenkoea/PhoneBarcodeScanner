@@ -10,12 +10,15 @@
 #include <vector>
 #include <strsafe.h>
 #include <commctrl.h>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
 
 #include "WSErrors.h"
 #include "WSServerThread.h"
 #include "SettingsManager.h"
 #include "StringUtils.h"
 #include "InputEmulator.h"
+#include <qrencode.h>
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -26,6 +29,8 @@
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_EXIT 201
 #define ID_TRAY_RESTORE 202
+
+#define WM_QR_UPDATE (WM_USER + 2)
 
 // Константы для окна настроек
 #define IDC_IP_ADDRESS 301
@@ -42,6 +47,7 @@ HWND hMainWnd;
 HWND hLogEdit;
 NOTIFYICONDATA nid = { 0 };
 WSServerThread srv;
+std::string currentQRText;
 
 void AddLogMessageToEdit(const std::string& message)
 {
@@ -84,17 +90,48 @@ void onClosedConnection(int id)
 
 void onDataReceiving(int id, const std::string& data)
 {
-    PostLogMessage(data);
+    try {
+        std::stringstream ss(data);
+        boost::property_tree::ptree pt;
+        boost::property_tree::read_json(ss, pt);
 
-    const std::wstring wideData = StringUtils::Utf8ToWide(data);
-    if (wideData.empty() && !data.empty())
-    {
-        PostLogMessage("Ошибка: некорректные UTF-8 данные");
-        return;
+        std::string command = pt.get<std::string>("command", "");
+        std::string payload = pt.get<std::string>("data", "");
+
+        if (command == "auth") {
+            if (payload == srv.getPasskey()) {
+                srv.setAuthenticated(id, true);
+                PostLogMessage("Клиент " + std::to_string(id) + " успешно авторизован");
+                srv.generateNewPasskey();
+            } else {
+                PostLogMessage("Клиент " + std::to_string(id) + ": неверный passkey. Соединение разорвано.");
+                srv.close(id);
+            }
+            return;
+        }
+
+        if (!srv.isAuthenticated(id)) {
+            PostLogMessage("Клиент " + std::to_string(id) + ": попытка передачи данных без авторизации. Соединение разорвано.");
+            srv.close(id);
+            return;
+        }
+
+        if (command == "scan") {
+            PostLogMessage("Данные от " + std::to_string(id) + ": " + payload);
+            const std::wstring wideData = StringUtils::Utf8ToWide(payload);
+            const auto& s = SettingsManager::getInstance().getSettings();
+            InputEmulator::SendString(wideData, s.prefix, s.postfix1, s.postfix2);
+        } else {
+            PostLogMessage("Неизвестная команда от " + std::to_string(id) + ": " + command);
+        }
+
+    } catch (const std::exception& e) {
+        PostLogMessage("Ошибка разбора JSON от " + std::to_string(id) + ": " + e.what());
+        // Если это не JSON или ошибка, и клиент не авторизован - закрываем
+        if (!srv.isAuthenticated(id)) {
+            srv.close(id);
+        }
     }
-
-    const auto& s = SettingsManager::getInstance().getSettings();
-    InputEmulator::SendString(wideData, s.prefix, s.postfix1, s.postfix2);
 }
 
 void ResizeControls(HWND hWnd)
@@ -104,17 +141,74 @@ void ResizeControls(HWND hWnd)
 
     constexpr int left = 10;
     constexpr int top = 50;
+    constexpr int qrSize = 200;
+    constexpr int spacing = 10;
 
-    constexpr int rightMargin = 10;
-    constexpr int bottomMargin = 10;
+    int logWidth = rcClient.right - left - qrSize - 2 * spacing;
+    int height = rcClient.bottom - top - 10;
 
-    int width = rcClient.right - left - rightMargin;
-    int height = rcClient.bottom - top - bottomMargin;
-
-    if (width < 0) width = 0;
+    if (logWidth < 100) logWidth = 100;
     if (height < 0) height = 0;
 
-    SetWindowPos(hLogEdit, nullptr, left, top, width, height, SWP_NOZORDER);
+    SetWindowPos(hLogEdit, nullptr, left, top, logWidth, height, SWP_NOZORDER);
+    
+    // Перерисовываем всё окно, чтобы обновить QR-код
+    InvalidateRect(hWnd, nullptr, TRUE);
+}
+
+void DrawQrCode(HWND hWnd, HDC hdc, const std::string& text) {
+    if (text.empty()) return;
+
+    QRcode* qr = QRcode_encodeString(text.c_str(), 0, QR_ECLEVEL_H, QR_MODE_8, 1);
+    if (!qr) return;
+
+    try {
+        RECT rcClient;
+        GetClientRect(hWnd, &rcClient);
+        
+        int qrMargin = 10;
+        int qrDrawSize = 200;
+        int xStart = rcClient.right - qrDrawSize - qrMargin;
+        int yStart = 50;
+
+        // Quiet zone (свободная зона) вокруг QR-кода должна быть минимум 4 модуля
+        int border = 4;
+        int modules = qr->width;
+        int totalModules = modules + border * 2;
+        int dotSize = qrDrawSize / totalModules;
+        if (dotSize < 1) dotSize = 1;
+
+        int actualSize = dotSize * totalModules;
+        int xOffset = xStart + (qrDrawSize - actualSize) / 2;
+        int yOffset = yStart + (qrDrawSize - actualSize) / 2;
+
+        HBRUSH hBlack = CreateSolidBrush(RGB(0, 0, 0));
+        HBRUSH hWhite = CreateSolidBrush(RGB(255, 255, 255));
+
+        // Фон всей области QR (включая центрирование)
+        RECT rcBg = { xStart, yStart, xStart + qrDrawSize, yStart + qrDrawSize };
+        FillRect(hdc, &rcBg, hWhite);
+
+        for (int y = 0; y < modules; y++) {
+            for (int x = 0; x < modules; x++) {
+                if (qr->data[y * modules + x] & 1) {
+                    RECT rc = {
+                        xOffset + (x + border) * dotSize,
+                        yOffset + (y + border) * dotSize,
+                        xOffset + (x + border + 1) * dotSize,
+                        yOffset + (y + border + 1) * dotSize
+                    };
+                    FillRect(hdc, &rc, hBlack);
+                }
+            }
+        }
+
+        DeleteObject(hBlack);
+        DeleteObject(hWhite);
+    } catch (...) {
+        // Ошибка отрисовки QR
+    }
+    QRcode_free(qr);
 }
 
 
@@ -258,6 +352,23 @@ void ShowSettingsDialog(HWND hWndParent) {
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
+        case WM_QR_UPDATE:
+        {
+            const auto& s = SettingsManager::getInstance().getSettings();
+            currentQRText = "{\"ip\":\"" + s.ip + "\",\"port\":" + std::to_string(s.port) + ",\"passkey\":\"" + srv.getPasskey() + "\"}";
+            InvalidateRect(hWnd, nullptr, TRUE);
+            break;
+        }
+        case WM_PAINT:
+        {
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hWnd, &ps);
+            if (!currentQRText.empty()) {
+                DrawQrCode(hWnd, hdc, currentQRText);
+            }
+            EndPaint(hWnd, &ps);
+            break;
+        }
         case WM_ADD_LOG_MESSAGE:
         {
             std::unique_ptr<std::string> text(reinterpret_cast<std::string*>(lParam));
@@ -276,6 +387,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         if (res == ERROR_NO_ERROR) {
                             AddLogMessageToEdit("Сервер запущен по адресу " + settings.ip + ":" + std::to_string(settings.port));
                             SetWindowTextW(hStartButton, L"Остановить сервер");
+                            SendMessage(hWnd, WM_QR_UPDATE, 0, 0);
                         } else {
                             AddLogMessageToEdit("Ошибка запуска сервера: " + std::to_string(res));
                             SetWindowTextW(hStartButton, L"Запустить сервер");
@@ -286,6 +398,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         if (res == ERROR_NO_ERROR) {
                             AddLogMessageToEdit("Сервер остановлен");
                             SetWindowTextW(hStartButton, L"Запустить сервер");
+                            currentQRText.clear();
+                            InvalidateRect(hWnd, nullptr, TRUE);
                         } else {
                             AddLogMessageToEdit("Ошибка остановки сервера: " + std::to_string(res));
                             SetWindowTextW(hStartButton, L"Остановить сервер");
@@ -358,6 +472,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     srv.sigOnNewConnection.connect(&onNewConnection);
     srv.sigOnClosedConnection.connect(onClosedConnection);
     srv.sigOnDataReceiving.connect(onDataReceiving);
+    srv.sigPasskeyChanged.connect([](std::string) {
+        if (hMainWnd) PostMessage(hMainWnd, WM_QR_UPDATE, 0, 0);
+    });
 
     hInst = hInstance;
     constexpr char szWindowClass[] = "PhoneBarcodeScannerClass";
@@ -380,7 +497,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!RegisterClassEx(&wcex)) return 1;
 
     HWND hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, nullptr, nullptr, hInstance, nullptr);
+        CW_USEDEFAULT, CW_USEDEFAULT, 650, 450, nullptr, nullptr, hInstance, nullptr);
 
     if (!hWnd) return 1;
 

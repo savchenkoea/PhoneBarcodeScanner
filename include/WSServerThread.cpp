@@ -17,11 +17,14 @@
  *
  */
 
+#include <random>
+#include <algorithm>
 #include "WSErrors.h"
 #include "WSServerThread.h"
 
 WSServerThread::WSServerThread() {
     this->isRunning.store(false);
+    this->generateNewPasskey();
 }
 
 
@@ -111,6 +114,33 @@ int WSServerThread::run(const std::string &address, const int &port)
 
     // возвращаем успешный результат
     return ERROR_NO_ERROR;
+}
+
+// функция возвращает текущий passkey
+std::string WSServerThread::getPasskey() const
+{
+    return this->currentPasskey;
+}
+
+// функция генерирует новый passkey
+void WSServerThread::generateNewPasskey()
+{
+    static const char charset[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<> dis(0, sizeof(charset) - 2);
+
+    std::string newPasskey;
+    newPasskey.reserve(64);
+    for (int i = 0; i < 64; ++i) {
+        newPasskey += charset[dis(gen)];
+    }
+
+    this->currentPasskey = newPasskey;
+    sigPasskeyChanged(this->currentPasskey);
 }
 
 // Основной поток сервера
@@ -310,4 +340,26 @@ int WSServerThread::getConnectionInfo(const int id, WSConnectionInfo &info)
         }
     }
     return ERROR_THREAD_NOT_FOUND;
+}
+
+bool WSServerThread::isAuthenticated(int id)
+{
+    std::lock_guard lock(this->threadsMutex);
+    for (const auto& ti : threads) {
+        if (ti->threadId == id) {
+            return ti->authenticated();
+        }
+    }
+    return false;
+}
+
+void WSServerThread::setAuthenticated(int id, bool value)
+{
+    std::lock_guard lock(this->threadsMutex);
+    for (const auto& ti : threads) {
+        if (ti->threadId == id) {
+            ti->setAuthenticated(value);
+            break;
+        }
+    }
 }
