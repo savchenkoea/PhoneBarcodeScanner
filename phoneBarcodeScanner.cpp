@@ -58,7 +58,7 @@ void AddLogMessageToEdit(const std::string& message)
     if (wmsg.empty())
         return;
 
-    SendMessageW(hLogEdit, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+    SendMessageW(hLogEdit, EM_SETSEL, static_cast<WPARAM>(-1), -1);
     SendMessageW(hLogEdit, EM_REPLACESEL, FALSE, reinterpret_cast<LPARAM>(wmsg.c_str()));
 }
 
@@ -518,6 +518,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                              WS_VISIBLE | WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY |
                              WS_BORDER,
                              10, 50, 360, 200, hWnd, (HMENU)IDC_LOG_EDIT, hInstance, nullptr);
+
+    // Увеличиваем лимит текста до ~10 МБ
+    SendMessageW(hLogEdit, EM_SETLIMITTEXT,  10 * 1024 * 1024, 0);
 
     ResizeControls(hWnd);
 
