@@ -12,39 +12,37 @@ namespace NetworkUtils {
     inline std::vector<std::string> GetActiveIPv4Addresses() {
         std::vector<std::string> addresses;
         ULONG outBufLen = 15000;
-        PIP_ADAPTER_ADDRESSES pAddresses = (IP_ADAPTER_ADDRESSES*)malloc(outBufLen);
-        if (pAddresses == nullptr) return addresses;
+        std::vector<BYTE> buffer;
+        ULONG dwRetVal = ERROR_BUFFER_OVERFLOW;
 
-        ULONG dwRetVal = GetAdaptersAddresses(AF_INET, GAA_FLAG_INCLUDE_PREFIX, nullptr, pAddresses, &outBufLen);
-        if (dwRetVal == ERROR_BUFFER_OVERFLOW) {
-            free(pAddresses);
-            pAddresses = (IP_ADAPTER_ADDRESSES*)malloc(outBufLen);
-            if (pAddresses == nullptr) return addresses;
-            dwRetVal = GetAdaptersAddresses(AF_INET, GAA_FLAG_INCLUDE_PREFIX, nullptr, pAddresses, &outBufLen);
+        // Попробуем получить список адресов до 3-х раз в случае изменения размера буфера
+        for (int i = 0; i < 3 && dwRetVal == ERROR_BUFFER_OVERFLOW; ++i) {
+            buffer.resize(outBufLen);
+            dwRetVal = GetAdaptersAddresses(AF_INET, GAA_FLAG_INCLUDE_PREFIX, nullptr,
+                                            reinterpret_cast<PIP_ADAPTER_ADDRESSES>(buffer.data()), &outBufLen);
         }
 
         if (dwRetVal == NO_ERROR) {
-            PIP_ADAPTER_ADDRESSES pCurrAddresses = pAddresses;
+            auto pCurrAddresses = reinterpret_cast<PIP_ADAPTER_ADDRESSES>(buffer.data());
             while (pCurrAddresses) {
                 if (pCurrAddresses->OperStatus == IfOperStatusUp) {
-                    PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pCurrAddresses->FirstUnicastAddress;
-                    while (pUnicast) {
-                        sockaddr_in* sa_in = (sockaddr_in*)pUnicast->Address.lpSockaddr;
-                        char buf[INET_ADDRSTRLEN];
-                        if (inet_ntop(AF_INET, &(sa_in->sin_addr), buf, sizeof(buf))) {
-                            std::string addr = buf;
-                            if (addr != "127.0.0.1") {
-                                addresses.push_back(addr);
+                    for (auto pUnicast = pCurrAddresses->FirstUnicastAddress; pUnicast; pUnicast = pUnicast->Next) {
+                        if (pUnicast->Address.lpSockaddr->sa_family == AF_INET) {
+                            auto sa_in = reinterpret_cast<sockaddr_in*>(pUnicast->Address.lpSockaddr);
+                            char buf[INET_ADDRSTRLEN];
+                            if (inet_ntop(AF_INET, &(sa_in->sin_addr), buf, sizeof(buf))) {
+                                std::string addr = buf;
+                                if (addr != "127.0.0.1") {
+                                    addresses.push_back(addr);
+                                }
                             }
                         }
-                        pUnicast = pUnicast->Next;
                     }
                 }
                 pCurrAddresses = pCurrAddresses->Next;
             }
         }
 
-        if (pAddresses) free(pAddresses);
         return addresses;
     }
 
@@ -63,7 +61,7 @@ namespace NetworkUtils {
             addr.sin_port = htons(static_cast<unsigned short>(port));
             inet_pton(AF_INET, ip.c_str(), &(addr.sin_addr));
 
-            if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+            if (bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
                 result = true;
                 // auto err = WSAGetLastError();
                 // if (err == WSAEADDRINUSE) {
