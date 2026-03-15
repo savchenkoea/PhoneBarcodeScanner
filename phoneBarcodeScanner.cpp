@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 #include <strsafe.h>
-#include <commctrl.h>
+// #include <commctrl.h>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
@@ -23,23 +23,23 @@
 
 #pragma comment(lib, "comctl32.lib")
 
-#define IDB_START_SERVER 101
-#define IDB_EXIT 102
-#define IDB_SETTINGS 104
-#define IDC_LOG_EDIT 103
-#define WM_TRAYICON (WM_USER + 1)
-#define ID_TRAY_EXIT 201
-#define ID_TRAY_RESTORE 202
+constexpr int IDB_START_SERVER = 101;
+constexpr int IDB_EXIT = 102;
+constexpr int IDB_SETTINGS = 104;
+constexpr int IDC_LOG_EDIT = 103;
+constexpr int WM_TRAYICON = WM_USER + 1;
+constexpr int ID_TRAY_EXIT = 201;
+constexpr int ID_TRAY_RESTORE = 202;
 
-#define WM_QR_UPDATE (WM_USER + 2)
+constexpr int WM_QR_UPDATE = WM_USER + 2;
 
 // Константы для окна настроек
-#define IDC_IP_ADDRESS 301
-#define IDC_PORT 302
-#define IDC_PREFIX 303
-#define IDC_POSTFIX1 304
-#define IDC_POSTFIX2 305
-#define IDB_SAVE_SETTINGS 306
+constexpr int IDC_IP_ADDRESS = 301;
+constexpr int IDC_PORT = 302;
+constexpr int IDC_PREFIX = 303;
+constexpr int IDC_POSTFIX1 = 304;
+constexpr int IDC_POSTFIX2 = 305;
+constexpr int IDB_SAVE_SETTINGS = 306;
 
 constexpr UINT WM_ADD_LOG_MESSAGE = WM_APP + 1;
 
@@ -70,10 +70,10 @@ void PostLogMessage(const std::string& message)
         return;
     }
 
-    auto* text = new std::string(message);
-    if (!PostMessage(hMainWnd, WM_ADD_LOG_MESSAGE, 0, reinterpret_cast<LPARAM>(text)))
+    auto text = std::make_unique<std::string>(message);
+    if (PostMessage(hMainWnd, WM_ADD_LOG_MESSAGE, 0, reinterpret_cast<LPARAM>(text.get())))
     {
-        delete text;
+        text.release();
     }
 }
 
@@ -97,8 +97,8 @@ void onDataReceiving(int id, const std::string& data)
         boost::property_tree::ptree pt;
         boost::property_tree::read_json(ss, pt);
 
-        std::string command = pt.get<std::string>("command", "");
-        std::string payload = pt.get<std::string>("data", "");
+        const std::string command = pt.get<std::string>("command", "");
+        const std::string payload = pt.get<std::string>("data", "");
 
         if (command == "auth") {
             if (payload == srv.getPasskey()) {
@@ -123,13 +123,14 @@ void onDataReceiving(int id, const std::string& data)
             const std::wstring wideData = StringUtils::Utf8ToWide(payload);
             const auto& s = SettingsManager::getInstance().getSettings();
             InputEmulator::SendString(wideData, s.prefix, s.postfix1, s.postfix2);
+        } else if (command == "heartbeat") {
+            // Игнорируем heartbeat без лишнего логирования
         } else {
             PostLogMessage("Неизвестная команда от " + std::to_string(id) + ": " + command);
         }
 
     } catch (const std::exception& e) {
         PostLogMessage("Ошибка разбора JSON от " + std::to_string(id) + ": " + e.what());
-        // Если это не JSON или ошибка, и клиент не авторизован - закрываем
         if (!srv.isAuthenticated(id)) {
             srv.close(id);
         }
@@ -172,26 +173,41 @@ void DrawQrCode(HWND hWnd, HDC hdc, const std::string& text) {
         RECT rcClient;
         GetClientRect(hWnd, &rcClient);
         
-        int qrMargin = 10;
-        int qrDrawSize = 200;
-        int xStart = rcClient.right - qrDrawSize - qrMargin;
+        constexpr int qrMargin = 10;
+        constexpr int qrDrawSize = 200;
+        const int xStart = rcClient.right - qrDrawSize - qrMargin;
         int yStart = 50;
 
+        // Рисуем пояснительный текст над QR-кодом
+        const wchar_t* hintText = L"Отсканируйте QR код в приложении на смартфоне для подключения";
+        RECT rcText = { xStart - 20, yStart, xStart + qrDrawSize + 20, yStart + 50 };
+
+        auto hFont = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        auto hOldFont = static_cast<HFONT>(SelectObject(hdc, hFont));
+        
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(0, 0, 0));
+        DrawTextW(hdc, hintText, -1, &rcText, DT_CENTER | DT_WORDBREAK | DT_TOP);
+        
+        SelectObject(hdc, hOldFont);
+
+        yStart = 100;
+        
         // Quiet zone (свободная зона) вокруг QR-кода должна быть минимум 4 модуля
-        int border = 4;
-        int modules = qr->width;
-        int totalModules = modules + border * 2;
+        constexpr int border = 4;
+        const int modules = qr->width;
+        const int totalModules = modules + border * 2;
         int dotSize = qrDrawSize / totalModules;
         if (dotSize < 1) dotSize = 1;
 
-        int actualSize = dotSize * totalModules;
-        int xOffset = xStart + (qrDrawSize - actualSize) / 2;
-        int yOffset = yStart + (qrDrawSize - actualSize) / 2;
+        const int actualSize = dotSize * totalModules;
+        const int xOffset = xStart + (qrDrawSize - actualSize) / 2;
+        const int yOffset = yStart + (qrDrawSize - actualSize) / 2;
 
         HBRUSH hBlack = CreateSolidBrush(RGB(0, 0, 0));
         HBRUSH hWhite = CreateSolidBrush(RGB(255, 255, 255));
 
-        // Фон всей области QR (включая центрирование)
+        // Фон всей области QR
         RECT rcBg = { xStart, yStart, xStart + qrDrawSize, yStart + qrDrawSize };
         FillRect(hdc, &rcBg, hWhite);
 
@@ -227,7 +243,7 @@ LRESULT CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
             const auto& settings = SettingsManager::getInstance().getSettings();
             HWND hIp = CreateWindowExW(0, L"COMBOBOX", nullptr,
                                        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 120, 10, 150, 200,
-                                       hDlg, reinterpret_cast<HMENU>(IDC_IP_ADDRESS), hInst, nullptr);
+                                       hDlg, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_IP_ADDRESS)), hInst, nullptr);
 
             auto addresses = NetworkUtils::GetActiveIPv4Addresses();
             bool found = false;
@@ -256,42 +272,45 @@ LRESULT CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
                             nullptr);
             HWND hPort = CreateWindowExA(0, "EDIT", std::to_string(settings.port).c_str(),
                                          WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 120, 40, 60, 20, hDlg,
-                                         reinterpret_cast<HMENU>(IDC_PORT), hInst, nullptr);
+                                         reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PORT)), hInst, nullptr);
             SendMessage(hPort, EM_SETLIMITTEXT, 5, 0);
 
             CreateWindowExW(0, L"STATIC", L"Префикс:", WS_CHILD | WS_VISIBLE, 10, 70, 100, 20, hDlg, nullptr, hInst,
                             nullptr);
             HWND hPrefix = CreateWindowExW(0, L"COMBOBOX", nullptr,
                                            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 120, 70, 150, 200,
-                                           hDlg, reinterpret_cast<HMENU>(IDC_PREFIX), hInst, nullptr);
+                                           hDlg, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PREFIX)), hInst, nullptr);
 
             CreateWindowExW(0, L"STATIC", L"Постфикс 1:", WS_CHILD | WS_VISIBLE, 10, 100, 100, 20, hDlg, nullptr, hInst,
                             nullptr);
             HWND hPostfix1 = CreateWindowExW(0, L"COMBOBOX", nullptr,
                                              WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 120, 100, 150, 200,
-                                             hDlg, reinterpret_cast<HMENU>(IDC_POSTFIX1), hInst, nullptr);
+                                             hDlg, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_POSTFIX1)), hInst, nullptr);
 
             CreateWindowExW(0, L"STATIC", L"Постфикс 2:", WS_CHILD | WS_VISIBLE, 10, 130, 100, 20, hDlg, nullptr, hInst,
                             nullptr);
             HWND hPostfix2 = CreateWindowExW(0, L"COMBOBOX", nullptr,
                                              WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 120, 130, 150, 200,
-                                             hDlg, reinterpret_cast<HMENU>(IDC_POSTFIX2), hInst, nullptr);
+                                             hDlg, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_POSTFIX2)), hInst, nullptr);
 
             CreateWindowExW(0, L"BUTTON", L"Сохранить", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 100, 170, 100, 30, hDlg,
-                            reinterpret_cast<HMENU>(IDB_SAVE_SETTINGS), hInst, nullptr);
+                            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_SAVE_SETTINGS)), hInst, nullptr);
 
             auto fillCombo = [&](HWND hCombo, int selectedVal) {
                 SendMessageW(hCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"<NONE>"));
                 for (int i = 1; i < 128; ++i)
                 {
                     wchar_t buf[64];
-                    auto name = L"";
-                    if (i == 13) name = L"CR";
-                    else if (i == 10) name = L"LF";
-                    else if (i == 8) name = L"BS";
-                    else if (i == 9) name = L"TAB";
-                    else if (i == 27) name = L"ESC";
-                    else if (i == 32) name = L"Space";
+                    const wchar_t* name = L"";
+                    switch (i) {
+                        case 13: name = L"CR"; break;
+                        case 10: name = L"LF"; break;
+                        case 8:  name = L"BS"; break;
+                        case 9:  name = L"TAB"; break;
+                        case 27: name = L"ESC"; break;
+                        case 32: name = L"Space"; break;
+                        default: break;
+                    }
 
                     if (*name)
                     {
@@ -374,12 +393,68 @@ void ShowSettingsDialog(HWND hWndParent) {
     GlobalFree(hgbl);
 }
 
+void OnStartServerCommand(HWND hWnd) {
+    HWND hStartButton = GetDlgItem(hWnd, IDB_START_SERVER);
+    const auto& settings = SettingsManager::getInstance().getSettings();
+
+    if (!srv.running()) {
+        const int res = srv.run(settings.ip, settings.port);
+
+        if (res == ERROR_NO_ERROR) {
+            AddLogMessageToEdit("Сервер запущен по адресу " + settings.ip + ":" + std::to_string(settings.port));
+            SetWindowTextW(hStartButton, L"Остановить сервер");
+            SendMessage(hWnd, WM_QR_UPDATE, 0, 0);
+        } else {
+            AddLogMessageToEdit("Ошибка запуска сервера: " + std::to_string(res));
+            SetWindowTextW(hStartButton, L"Запустить сервер");
+        }
+    } else {
+        const int res = srv.stop();
+
+        if (res == ERROR_NO_ERROR) {
+            AddLogMessageToEdit("Сервер остановлен");
+            SetWindowTextW(hStartButton, L"Запустить сервер");
+            currentQRText.clear();
+            InvalidateRect(hWnd, nullptr, TRUE);
+        } else {
+            AddLogMessageToEdit("Ошибка остановки сервера: " + std::to_string(res));
+            SetWindowTextW(hStartButton, L"Остановить сервер");
+        }
+    }
+}
+
+void OnSettingsCommand(HWND hWnd) {
+    if (srv.running()) {
+        MessageBoxW(hWnd, L"Остановите сервер перед изменением настроек.", L"Предупреждение", MB_OK | MB_ICONWARNING);
+    } else {
+        ShowSettingsDialog(hWnd);
+    }
+}
+
+void OnTrayIcon(HWND hWnd, LPARAM lParam) {
+    if (lParam == WM_LBUTTONDBLCLK) {
+        ShowWindow(hWnd, SW_RESTORE);
+        SetForegroundWindow(hWnd);
+    } else if (lParam == WM_RBUTTONUP) {
+        POINT curPoint;
+        GetCursorPos(&curPoint);
+        HMENU hMenu = CreatePopupMenu();
+        if (hMenu) {
+            InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_RESTORE, L"Восстановить");
+            InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Выход");
+            SetForegroundWindow(hWnd);
+            TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, curPoint.x, curPoint.y, 0, hWnd, nullptr);
+            DestroyMenu(hMenu);
+        }
+    }
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         case WM_QR_UPDATE:
         {
             const auto& s = SettingsManager::getInstance().getSettings();
-            currentQRText = "{\"ip\":\"" + s.ip + "\",\"port\":" + std::to_string(s.port) + ",\"passkey\":\"" + srv.getPasskey() + "\"}";
+            currentQRText = R"({"ip":")" + s.ip + R"(","port":)" + std::to_string(s.port) + R"(,"passkey":")" + srv.getPasskey() + R"("})";
             InvalidateRect(hWnd, nullptr, TRUE);
             break;
         }
@@ -396,49 +471,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         case WM_ADD_LOG_MESSAGE:
         {
             std::unique_ptr<std::string> text(reinterpret_cast<std::string*>(lParam));
-            AddLogMessageToEdit(*text);
+            if (text) {
+                AddLogMessageToEdit(*text);
+            }
             break;
         }
         case WM_COMMAND: {
             switch (LOWORD(wParam)) {
-                case IDB_START_SERVER: {
-                    HWND hStartButton = GetDlgItem(hWnd, IDB_START_SERVER);
-                    const auto& settings = SettingsManager::getInstance().getSettings();
-
-                    if (!srv.running()) {
-                        int res = srv.run(settings.ip, settings.port);
-
-                        if (res == ERROR_NO_ERROR) {
-                            AddLogMessageToEdit("Сервер запущен по адресу " + settings.ip + ":" + std::to_string(settings.port));
-                            SetWindowTextW(hStartButton, L"Остановить сервер");
-                            SendMessage(hWnd, WM_QR_UPDATE, 0, 0);
-                        } else {
-                            AddLogMessageToEdit("Ошибка запуска сервера: " + std::to_string(res));
-                            SetWindowTextW(hStartButton, L"Запустить сервер");
-                        }
-                    } else {
-                        int res = srv.stop();
-
-                        if (res == ERROR_NO_ERROR) {
-                            AddLogMessageToEdit("Сервер остановлен");
-                            SetWindowTextW(hStartButton, L"Запустить сервер");
-                            currentQRText.clear();
-                            InvalidateRect(hWnd, nullptr, TRUE);
-                        } else {
-                            AddLogMessageToEdit("Ошибка остановки сервера: " + std::to_string(res));
-                            SetWindowTextW(hStartButton, L"Остановить сервер");
-                        }
-                    }
+                case IDB_START_SERVER:
+                    OnStartServerCommand(hWnd);
                     break;
-                }
-                case IDB_SETTINGS: {
-                    if (srv.running()) {
-                        MessageBoxW(hWnd, L"Остановите сервер перед изменением настроек.", L"Предупреждение", MB_OK | MB_ICONWARNING);
-                    } else {
-                        ShowSettingsDialog(hWnd);
-                    }
+                case IDB_SETTINGS:
+                    OnSettingsCommand(hWnd);
                     break;
-                }
                 case IDB_EXIT:
                 case ID_TRAY_EXIT:
                     Shell_NotifyIcon(NIM_DELETE, &nid);
@@ -450,8 +495,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     break;
                 default: break;
             }
+            break;
         }
-        break;
         case WM_SIZE:
             if (hLogEdit != nullptr) {
                 ResizeControls(hWnd);
@@ -467,19 +512,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             ShowWindow(hWnd, SW_HIDE);
             break;
         case WM_TRAYICON:
-            if (lParam == WM_LBUTTONDBLCLK) {
-                ShowWindow(hWnd, SW_RESTORE);
-                SetForegroundWindow(hWnd);
-            } else if (lParam == WM_RBUTTONUP) {
-                POINT curPoint;
-                GetCursorPos(&curPoint);
-                HMENU hMenu = CreatePopupMenu();
-                InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_RESTORE, L"Восстановить");
-                InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, L"Выход");
-                SetForegroundWindow(hWnd);
-                TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, curPoint.x, curPoint.y, 0, hWnd, nullptr);
-                DestroyMenu(hMenu);
-            }
+            OnTrayIcon(hWnd, lParam);
             break;
         case WM_DESTROY:
             Shell_NotifyIcon(NIM_DELETE, &nid);
@@ -536,20 +569,20 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     SettingsManager::getInstance().load();
 
     CreateWindowW(L"BUTTON", L"Запустить сервер", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  10, 10, 150, 30, hWnd, (HMENU)IDB_START_SERVER, hInstance, nullptr);
+                  10, 10, 150, 30, hWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_START_SERVER)), hInstance, nullptr);
 
     CreateWindowW(L"BUTTON", L"Настройка", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  170, 10, 100, 30, hWnd, (HMENU)IDB_SETTINGS, hInstance, nullptr);
+                  170, 10, 100, 30, hWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_SETTINGS)), hInstance, nullptr);
 
     CreateWindowW(L"BUTTON", L"Выход", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  280, 10, 80, 30, hWnd, (HMENU)IDB_EXIT, hInstance, nullptr);
+                  280, 10, 80, 30, hWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_EXIT)), hInstance, nullptr);
 
     hLogContainer = CreateWindowW(L"STATIC", L"", WS_VISIBLE | WS_CHILD | WS_BORDER,
                                  10, 50, 360, 200, hWnd, nullptr, hInstance, nullptr);
 
     hLogEdit = CreateWindowExW(0, L"EDIT", L"",
                              WS_VISIBLE | WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
-                             0, 0, 360, 200, hLogContainer, (HMENU)IDC_LOG_EDIT, hInstance, nullptr);
+                             0, 0, 360, 200, hLogContainer, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LOG_EDIT)), hInstance, nullptr);
 
     // Увеличиваем лимит текста до ~10 МБ
     SendMessageW(hLogEdit, EM_SETLIMITTEXT,  10 * 1024 * 1024, 0);
