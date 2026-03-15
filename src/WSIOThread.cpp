@@ -17,8 +17,8 @@
  *
  */
 
-#include "WSErrors.h"
-#include "WSIOThread.h"
+#include "../include/WSErrors.h"
+#include "../include/WSIOThread.h"
 
 // Конструктор создает веб-сокет ws на основе сокета socket и запускает поток, которые слушает данный веб-сокет.
 // Полученные сообщения передаются в 1С с помощью механизма внешних событий

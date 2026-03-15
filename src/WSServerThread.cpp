@@ -19,9 +19,9 @@
 
 #include <random>
 #include <algorithm>
-#include "WSErrors.h"
-#include "WSServerThread.h"
-#include "NetworkUtils.h"
+#include "../include/WSErrors.h"
+#include "../include/WSServerThread.h"
+#include "../include/NetworkUtils.h"
 
 WSServerThread::WSServerThread() {
     this->isRunning.store(false);
@@ -139,7 +139,7 @@ std::string WSServerThread::getPasskey() const
 // функция генерирует новый passkey
 void WSServerThread::generateNewPasskey()
 {
-    static const char charset[] =
+    static constexpr char charset[] =
         "0123456789"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz";

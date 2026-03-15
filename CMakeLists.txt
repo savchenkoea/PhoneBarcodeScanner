@@ -65,16 +65,12 @@ set(QRENCODE_LIBRARIES optimized ${QRENCODE_LIBRARY_RELEASE} debug ${QRENCODE_LI
 
 list(APPEND SOURCES
         phoneBarcodeScanner.cpp
-        include/SettingsManager.h
-        include/StringUtils.h
-        include/InputEmulator.h
-        include/WSErrors.h
-        include/WSInclude.h
-        include/WSIOThread.cpp
-        include/WSIOThread.h
-        include/WSServerThread.cpp
-        include/WSServerThread.h
-        include/NetworkUtils.h)
+        src/WSIOThread.cpp
+        src/WSServerThread.cpp
+        src/Logger.cpp
+        src/QRCodeRenderer.cpp
+        src/SettingsDialog.cpp
+        src/CommandHandler.cpp)
 
 if (WIN32)
     add_executable(${TARGET} WIN32 ${SOURCES})
@@ -82,7 +78,7 @@ else()
     add_executable(${TARGET} ${SOURCES})
 endif()
 
-target_include_directories(${TARGET} PRIVATE include ${QRENCODE_INCLUDE_DIR})
+target_include_directories(${TARGET} PRIVATE include src ${QRENCODE_INCLUDE_DIR})
 
 target_link_libraries(${TARGET} PRIVATE Boost::system ${QRENCODE_LIBRARIES})
 
