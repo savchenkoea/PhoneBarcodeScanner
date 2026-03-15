@@ -73,7 +73,8 @@ list(APPEND SOURCES
         include/WSIOThread.cpp
         include/WSIOThread.h
         include/WSServerThread.cpp
-        include/WSServerThread.h)
+        include/WSServerThread.h
+        include/NetworkUtils.h)
 
 if (WIN32)
     add_executable(${TARGET} WIN32 ${SOURCES})

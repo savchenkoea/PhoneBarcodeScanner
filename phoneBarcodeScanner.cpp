@@ -19,6 +19,7 @@
 #include "StringUtils.h"
 #include "InputEmulator.h"
 #include <qrencode.h>
+#include "NetworkUtils.h"
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -45,6 +46,7 @@ constexpr UINT WM_ADD_LOG_MESSAGE = WM_APP + 1;
 HINSTANCE hInst;
 HWND hMainWnd;
 HWND hLogEdit;
+HWND hLogContainer;
 NOTIFYICONDATA nid = { 0 };
 WSServerThread srv;
 std::string currentQRText;
@@ -150,7 +152,11 @@ void ResizeControls(HWND hWnd)
     if (logWidth < 100) logWidth = 100;
     if (height < 0) height = 0;
 
-    SetWindowPos(hLogEdit, nullptr, left, top, logWidth, height, SWP_NOZORDER);
+    SetWindowPos(hLogContainer, nullptr, left, top, logWidth, height, SWP_NOZORDER);
+
+    RECT rcLog;
+    GetClientRect(hLogContainer, &rcLog);
+    SetWindowPos(hLogEdit, nullptr, 0, 0, rcLog.right, rcLog.bottom, SWP_NOZORDER);
     
     // Перерисовываем всё окно, чтобы обновить QR-код
     InvalidateRect(hWnd, nullptr, TRUE);
@@ -219,12 +225,29 @@ LRESULT CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
     case WM_INITDIALOG:
         {
             const auto& settings = SettingsManager::getInstance().getSettings();
-            HWND hIp = CreateWindowExW(0, WC_IPADDRESSW, nullptr, WS_CHILD | WS_VISIBLE | WS_BORDER, 120, 10, 150, 20,
+            HWND hIp = CreateWindowExW(0, L"COMBOBOX", nullptr,
+                                       WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 120, 10, 150, 200,
                                        hDlg, reinterpret_cast<HMENU>(IDC_IP_ADDRESS), hInst, nullptr);
-            unsigned char b1, b2, b3, b4;
-            if (sscanf_s(settings.ip.c_str(), "%hhu.%hhu.%hhu.%hhu", &b1, &b2, &b3, &b4) == 4)
+
+            auto addresses = NetworkUtils::GetActiveIPv4Addresses();
+            bool found = false;
+            for (const auto& addr : addresses)
             {
-                SendMessage(hIp, IPM_SETADDRESS, 0, MAKEIPADDRESS(b1, b2, b3, b4));
+                SendMessageW(hIp, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(StringUtils::Utf8ToWide(addr).c_str()));
+                if (addr == settings.ip) {
+                    found = true;
+                }
+            }
+
+            int index = CB_ERR;
+            if (found) {
+                index = static_cast<int>(SendMessageW(hIp, CB_FINDSTRINGEXACT, -1, reinterpret_cast<LPARAM>(StringUtils::Utf8ToWide(settings.ip).c_str())));
+            }
+
+            if (index != CB_ERR) {
+                SendMessage(hIp, CB_SETCURSEL, index, 0);
+            } else if (SendMessage(hIp, CB_GETCOUNT, 0, 0) > 0) {
+                SendMessage(hIp, CB_SETCURSEL, 0, 0);
             }
 
             CreateWindowExW(0, L"STATIC", L"IP адрес:", WS_CHILD | WS_VISIBLE, 10, 10, 100, 20, hDlg, nullptr, hInst,
@@ -299,13 +322,14 @@ LRESULT CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
             {
                 AppSettings settings;
                 HWND hIp = GetDlgItem(hDlg, IDC_IP_ADDRESS);
-                DWORD dwIp;
-                SendMessage(hIp, IPM_GETADDRESS, 0, reinterpret_cast<LPARAM>(&dwIp));
-                char ipBuf[32];
-                sprintf_s(ipBuf, sizeof(ipBuf), "%u.%u.%u.%u", FIRST_IPADDRESS(dwIp), SECOND_IPADDRESS(dwIp),
-                          THIRD_IPADDRESS(dwIp),
-                          FOURTH_IPADDRESS(dwIp));
-                settings.ip = ipBuf;
+                int ipIdx = static_cast<int>(SendMessage(hIp, CB_GETCURSEL, 0, 0));
+                if (ipIdx != CB_ERR) {
+                    wchar_t ipBufW[32];
+                    SendMessageW(hIp, CB_GETLBTEXT, ipIdx, reinterpret_cast<LPARAM>(ipBufW));
+                    settings.ip = StringUtils::WideToUtf8(ipBufW);
+                } else {
+                    settings.ip = SettingsManager::getInstance().getSettings().ip;
+                }
 
                 char portBuf[16];
                 GetDlgItemTextA(hDlg, IDC_PORT, portBuf, sizeof(portBuf));
@@ -469,6 +493,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
 
+    auto addresses = NetworkUtils::GetActiveIPv4Addresses();
+    if (addresses.empty()) {
+        MessageBoxW(nullptr, L"Сетевые интерфейсы не найдены. Работа программы будет завершена.", L"Ошибка", MB_OK | MB_ICONERROR);
+        return 0;
+    }
+
     srv.sigOnNewConnection.connect(&onNewConnection);
     srv.sigOnClosedConnection.connect(onClosedConnection);
     srv.sigOnDataReceiving.connect(onDataReceiving);
@@ -514,10 +544,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     CreateWindowW(L"BUTTON", L"Выход", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
                   280, 10, 80, 30, hWnd, (HMENU)IDB_EXIT, hInstance, nullptr);
 
-    hLogEdit = CreateWindowW(L"EDIT", L"",
-                             WS_VISIBLE | WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY |
-                             WS_BORDER,
-                             10, 50, 360, 200, hWnd, (HMENU)IDC_LOG_EDIT, hInstance, nullptr);
+    hLogContainer = CreateWindowW(L"STATIC", L"", WS_VISIBLE | WS_CHILD | WS_BORDER,
+                                 10, 50, 360, 200, hWnd, nullptr, hInstance, nullptr);
+
+    hLogEdit = CreateWindowExW(0, L"EDIT", L"",
+                             WS_VISIBLE | WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+                             0, 0, 360, 200, hLogContainer, (HMENU)IDC_LOG_EDIT, hInstance, nullptr);
 
     // Увеличиваем лимит текста до ~10 МБ
     SendMessageW(hLogEdit, EM_SETLIMITTEXT,  10 * 1024 * 1024, 0);

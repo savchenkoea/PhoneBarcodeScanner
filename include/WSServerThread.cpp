@@ -21,6 +21,7 @@
 #include <algorithm>
 #include "WSErrors.h"
 #include "WSServerThread.h"
+#include "NetworkUtils.h"
 
 WSServerThread::WSServerThread() {
     this->isRunning.store(false);
@@ -70,10 +71,23 @@ int WSServerThread::run(const std::string &address, const int &port)
     cr = portIsValid(port);
     if (cr != ERROR_NO_ERROR) return cr;
 
+// Проверяем, что адрес входит в список доступных адресов на компьютере
+    std::vector<std::string> activeAddresses = NetworkUtils::GetActiveIPv4Addresses();
+    if (std::find(activeAddresses.begin(), activeAddresses.end(), address) == activeAddresses.end())
+    {
+        return ERROR_INVALID_SERVER_ADDRESS;
+    }
+
+    if (NetworkUtils::IsPortBusy(address, port)) {
+        return ERROR_PORT_IS_ALREADY_IN_USE;
+    }
+
     if (this->running()) return ERROR_SERVER_IS_ALREADY_RUNNING;
 
     try
     {
+
+
         boost::system::error_code ec;
 
         stopThread.store(false);
