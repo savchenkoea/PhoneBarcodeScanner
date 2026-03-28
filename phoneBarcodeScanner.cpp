@@ -23,8 +23,9 @@
 
 constexpr int IDB_START_SERVER = 101;
 constexpr int IDB_EXIT = 102;
-constexpr int IDB_SETTINGS = 104;
 constexpr int IDC_LOG_EDIT = 103;
+constexpr int IDB_SETTINGS = 104;
+constexpr int IDB_CLEAR_LOG = 105;
 constexpr int WM_TRAYICON = WM_USER + 1;
 constexpr int ID_TRAY_EXIT = 201;
 constexpr int ID_TRAY_RESTORE = 202;
@@ -175,6 +176,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             case IDB_SETTINGS:
                 OnSettingsCommand(hWnd);
                 break;
+            case IDB_CLEAR_LOG:
+                Logger::ClearLog();
+                break;
             case IDB_EXIT:
             case ID_TRAY_EXIT:
                 if (hLogFont) DeleteObject(hLogFont);
@@ -275,8 +279,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     CreateWindowW(L"BUTTON", L"Настройка", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
                   170, 10, 100, 30, hWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_SETTINGS)), hInstance, nullptr);
 
+    CreateWindowW(L"BUTTON", L"Очистить лог", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                   280, 10, 120, 30, hWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_CLEAR_LOG)), hInstance, nullptr);
+
     CreateWindowW(L"BUTTON", L"Выход", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  280, 10, 80, 30, hWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_EXIT)), hInstance, nullptr);
+                  410, 10, 80, 30, hWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_EXIT)), hInstance, nullptr);
 
     hLogContainer = CreateWindowW(L"STATIC", L"", WS_VISIBLE | WS_CHILD | WS_BORDER,
                                  10, 50, 360, 200, hWnd, nullptr, hInstance, nullptr);
