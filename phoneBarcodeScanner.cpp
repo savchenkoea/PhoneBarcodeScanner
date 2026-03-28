@@ -217,6 +217,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
 
+    // Проверка на повторный запуск приложения
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Global\\PhoneBarcodeScannerMutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        MessageBoxW(nullptr, L"Приложение PhoneBarcodeScanner уже запущено", L"Предупреждение", MB_OK | MB_ICONWARNING);
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+
     auto addresses = NetworkUtils::GetActiveIPv4Addresses();
     if (addresses.empty()) {
         MessageBoxW(nullptr, L"Сетевые интерфейсы не найдены. Работа программы будет завершена.", L"Ошибка", MB_OK | MB_ICONERROR);
