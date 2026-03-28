@@ -30,6 +30,7 @@ constexpr int ID_TRAY_EXIT = 201;
 constexpr int ID_TRAY_RESTORE = 202;
 
 constexpr int WM_QR_UPDATE = WM_USER + 2;
+extern const int WM_MINIMIZE_TO_TRAY = WM_USER + 3;
 
 HINSTANCE hInst;
 HWND hMainWnd;
@@ -142,23 +143,24 @@ void OnTrayIcon(HWND hWnd, LPARAM lParam) {
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
-        case WM_QR_UPDATE:
-        {
+        case WM_QR_UPDATE: {
             const auto& s = SettingsManager::getInstance().getSettings();
             currentQRText = R"({"ip":")" + s.ip + R"(","port":)" + std::to_string(s.port) + R"(,"passkey":")" + srv.getPasskey() + R"("})";
             InvalidateRect(hWnd, nullptr, TRUE);
             break;
         }
-        case WM_PAINT:
-        {
+        case WM_MINIMIZE_TO_TRAY: {
+            ShowWindow(hWnd, SW_HIDE);
+            break;
+        }
+        case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
             QRCodeRenderer::DrawQrCode(hWnd, hdc, currentQRText);
             EndPaint(hWnd, &ps);
             break;
         }
-        case WM_ADD_LOG_MESSAGE:
-        {
+        case WM_ADD_LOG_MESSAGE: {
             std::unique_ptr<std::string> text(reinterpret_cast<std::string*>(lParam));
             if (text) {
                 Logger::AddLogMessageToEdit(*text);
@@ -167,23 +169,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
         case WM_COMMAND: {
             switch (LOWORD(wParam)) {
-                case IDB_START_SERVER:
-                    OnStartServerCommand(hWnd);
-                    break;
-                case IDB_SETTINGS:
-                    OnSettingsCommand(hWnd);
-                    break;
-                case IDB_EXIT:
-                case ID_TRAY_EXIT:
-                    if (hLogFont) DeleteObject(hLogFont);
-                    Shell_NotifyIcon(NIM_DELETE, &nid);
-                    PostQuitMessage(0);
-                    break;
-                case ID_TRAY_RESTORE:
-                    ShowWindow(hWnd, SW_RESTORE);
-                    SetForegroundWindow(hWnd);
-                    break;
-                default: break;
+            case IDB_START_SERVER:
+                OnStartServerCommand(hWnd);
+                break;
+            case IDB_SETTINGS:
+                OnSettingsCommand(hWnd);
+                break;
+            case IDB_EXIT:
+            case ID_TRAY_EXIT:
+                if (hLogFont) DeleteObject(hLogFont);
+                Shell_NotifyIcon(NIM_DELETE, &nid);
+                PostQuitMessage(0);
+                break;
+            case ID_TRAY_RESTORE:
+                ShowWindow(hWnd, SW_RESTORE);
+                SetForegroundWindow(hWnd);
+                break;
+            default: break;
             }
             break;
         }

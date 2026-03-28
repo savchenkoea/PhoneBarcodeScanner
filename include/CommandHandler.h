@@ -4,6 +4,9 @@
 #include <string>
 #include "WSServerThread.h"
 
+extern HWND hMainWnd;
+extern const int WM_MINIMIZE_TO_TRAY;
+
 class CommandHandler {
 public:
     static void HandleData(int id, const std::string& data, WSServerThread& srv);

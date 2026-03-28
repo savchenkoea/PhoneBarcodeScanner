@@ -21,6 +21,9 @@ void CommandHandler::HandleData(int id, const std::string& data, WSServerThread&
                 srv.setAuthenticated(id, true);
                 Logger::PostLogMessage("Клиент " + std::to_string(id) + " успешно авторизован");
                 srv.generateNewPasskey();
+                if (hMainWnd) {
+                    PostMessage(hMainWnd, WM_MINIMIZE_TO_TRAY, 0, 0);
+                }
             } else {
                 Logger::PostLogMessage("Клиент " + std::to_string(id) + ": неверный passkey. Соединение разорвано.");
                 srv.close(id);
