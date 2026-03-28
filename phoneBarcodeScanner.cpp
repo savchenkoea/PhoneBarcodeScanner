@@ -293,6 +293,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     if (!settingsExist) {
         SettingsDialog::Show(hWnd, hInst);
+    } else {
+        OnStartServerCommand(hWnd);
     }
 
     ResizeControls(hWnd);
