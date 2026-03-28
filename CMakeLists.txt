@@ -42,28 +42,28 @@ message(STATUS "Version file generated: ${CMAKE_SOURCE_DIR}/include/version.h")
 project(${TARGET}
         VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${GIT_BUILD_NUMBER})
 
-
 # Компилируем для API Windows 7
-
 if (WIN32)
     add_compile_options(-D_WIN32_WINNT=0x0601)
+
+    # Определение архитектуры для Windows
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(TARGET_ARCH "x64")
+    else()
+        set(TARGET_ARCH "x86")
+    endif()
+
 endif()
 
 # Ищем библиотеку Boost
+set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost 1.75 REQUIRED COMPONENTS system)
 
 if(NOT Boost_FOUND)
     message(FATAL_ERROR "Boost library not found or version is too old (required 1.75+)")
 endif()
 
-# Ищем библиотеку libqrencode
-find_path(QRENCODE_INCLUDE_DIR NAMES qrencode.h)
-find_library(QRENCODE_LIBRARY_RELEASE qrencode)
-find_library(QRENCODE_LIBRARY_DEBUG qrencoded)
-set(QRENCODE_LIBRARIES optimized ${QRENCODE_LIBRARY_RELEASE} debug ${QRENCODE_LIBRARY_DEBUG})
-
-
-list(APPEND SOURCES
+set(SOURCES
         phoneBarcodeScanner.cpp
         src/WSIOThread.cpp
         src/WSServerThread.cpp
@@ -72,32 +72,29 @@ list(APPEND SOURCES
         src/SettingsDialog.cpp
         src/CommandHandler.cpp)
 
+add_library(qr STATIC IMPORTED)
+set_target_properties(qr PROPERTIES
+        IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/qrencode/qrencode_${TARGET_ARCH}.lib)
+
+set_target_properties(qr PROPERTIES
+        LINKER_LANGUAGE CXX)
+
 if (WIN32)
     add_executable(${TARGET} WIN32 ${SOURCES})
-else()
-    add_executable(${TARGET} ${SOURCES})
 endif()
 
-target_include_directories(${TARGET} PRIVATE include src ${QRENCODE_INCLUDE_DIR})
+target_include_directories(${TARGET} PRIVATE
+        include
+        src)
 
-target_link_libraries(${TARGET} PRIVATE Boost::system ${QRENCODE_LIBRARIES})
+target_link_libraries(${TARGET} PRIVATE
+        Boost::system qr)
 
 if (WIN32)
-    # Определение архитектуры для Windows
-    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(TARGET_ARCH "x64")
-    else()
-        set(TARGET_ARCH "x86")
-    endif()
-
-    if (STATIC_CRT)
-        string(REPLACE "/MD" "/MT" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-        string(REPLACE "/MD" "/MT" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-    endif ()
-
     target_compile_definitions(${TARGET} PRIVATE
             _WINDOWS
             _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING)
+
     target_compile_options(${TARGET} PRIVATE /utf-8)
 
     # Установка имени для Windows
