@@ -92,4 +92,4 @@ private:
     // процедура потока, принимающего сообщения из веб-сокета
     void threadRoutine();
 };
-#endif WSSERVER_WSIOTHREAD_H
+#endif // WSSERVER_WSIOTHREAD_H

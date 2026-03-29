@@ -93,7 +93,10 @@ int WSServerThread::run(const std::string &address, const int &port)
         // Передаём address, чтобы IP попал в SAN — иначе Android отклонит сертификат.
         SSLCertManager::CertKeyPair ckp;
         if (!SSLCertManager::generate(address, ckp)) return ERROR_SSL_CERT_GENERATE_FAILED;
-        currentCertPin = ckp.certPin;
+        {
+            std::lock_guard lock(dataMutex_);
+            currentCertPin = ckp.certPin;
+        }
 
         // Загружаем сертификат и ключ в SSL-контекст из памяти (без файлов)
         sslCtx.use_certificate_chain(boost::asio::buffer(ckp.certPem), ec);
@@ -145,13 +148,15 @@ int WSServerThread::run(const std::string &address, const int &port)
 // функция возвращает текущий passkey
 std::string WSServerThread::getPasskey() const
 {
-    return this->currentPasskey;
+    std::lock_guard lock(dataMutex_);
+    return currentPasskey;
 }
 
 // функция возвращает SHA-256 отпечаток публичного ключа текущего сертификата
 std::string WSServerThread::getCertPin() const
 {
-    return this->currentCertPin;
+    std::lock_guard lock(dataMutex_);
+    return currentCertPin;
 }
 
 // функция генерирует новый passkey
@@ -171,8 +176,14 @@ void WSServerThread::generateNewPasskey()
         newPasskey += charset[dis(gen)];
     }
 
-    this->currentPasskey = newPasskey;
-    sigPasskeyChanged(this->currentPasskey);
+    // Обновляем под мьютексом, сигнал испускаем за его пределами:
+    // вызов слота из-под блокировки может привести к дедлоку, если слот
+    // попытается снова обратиться к getPasskey().
+    {
+        std::lock_guard lock(dataMutex_);
+        currentPasskey = newPasskey;
+    }
+    sigPasskeyChanged(newPasskey);
 }
 
 // Основной поток сервера
@@ -212,7 +223,13 @@ void WSServerThread::serverThread()
                     threads.emplace_back(std::make_unique<IOThread>(++nextThreadId,
                         std::move(socket), sslCtx, ec));
 
-                    if (!ec)
+                    if (ec)
+                    {
+                        // SSL/WebSocket рукопожатие не удалось — удаляем мёртвый IOThread
+                        // из вектора, чтобы он не попал в следующий closeAll().
+                        threads.pop_back();
+                    }
+                    else
                     {
                         IOThread* newThread = threads.back().get();
                         newThread->sigOnDataReceiving.connect([this](int id, std::string data) {

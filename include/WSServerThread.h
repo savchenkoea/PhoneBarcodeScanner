@@ -70,7 +70,7 @@ public:
     int closeAll();
 
     // функция возвращает список активных соединений
-    int WSServerThread::getConnectionsList(std::vector<WSConnectionInfo>& connections_list);
+    int getConnectionsList(std::vector<WSConnectionInfo>& connections_list);
 
     // функция возвращает информацию о соединении
     int getConnectionInfo(int id, WSConnectionInfo &info);
@@ -126,11 +126,15 @@ private:
     // Начинаем с 1 и для каждого следующего потока увеличиваем на 1
     int nextThreadId{0};
 
-    // Текущий passkey для авторизации клиентов
+    // Текущий passkey для авторизации клиентов.
+    // Защищён dataMutex_: пишется из рабочего потока, читается из UI-потока.
     std::string currentPasskey;
 
     // SHA-256 отпечаток публичного ключа текущего сертификата (формат OkHttp)
     std::string currentCertPin;
+
+    // Мьютекс для потокобезопасного доступа к currentPasskey и currentCertPin
+    mutable std::mutex dataMutex_;
 
     // Внутренние методы объекта:
 
