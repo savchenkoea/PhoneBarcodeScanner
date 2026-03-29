@@ -5,8 +5,8 @@ void QRCodeRenderer::DrawQrCode(HWND hWnd, HDC hdc, const std::string& text) {
     RECT rcClient;
     GetClientRect(hWnd, &rcClient);
 
-    constexpr int qrMargin = 10;
-    constexpr int qrDrawSize = 200;
+    constexpr int qrMargin = 4;
+    constexpr int qrDrawSize = 300;
     const int xStart = rcClient.right - qrDrawSize - qrMargin;
     int yStart = 50;
 
@@ -44,7 +44,7 @@ void QRCodeRenderer::DrawQrCode(HWND hWnd, HDC hdc, const std::string& text) {
         
         DrawTextW(hdc, hintText, -1, &rcText, DT_CENTER | DT_WORDBREAK | DT_TOP);
         
-        yStart = 130;
+        yStart = 110;
         
         // Quiet zone (свободная зона) вокруг QR-кода должна быть минимум 4 модуля
         constexpr int border = 4;

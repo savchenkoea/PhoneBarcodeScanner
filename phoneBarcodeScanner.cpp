@@ -64,8 +64,8 @@ void ResizeControls(HWND hWnd)
 
     constexpr int left = 10;
     constexpr int top = 50;
-    constexpr int qrSize = 200;
-    constexpr int spacing = 10;
+    constexpr int qrSize = 300;
+    constexpr int spacing = 4;
 
     int logWidth = rcClient.right - left - qrSize - 2 * spacing;
     int height = rcClient.bottom - top - 10;
