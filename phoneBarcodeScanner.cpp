@@ -146,7 +146,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     switch (message) {
         case WM_QR_UPDATE: {
             const auto& s = SettingsManager::getInstance().getSettings();
-            currentQRText = R"({"ip":")" + s.ip + R"(","port":)" + std::to_string(s.port) + R"(,"passkey":")" + srv.getPasskey() + R"("})";
+            currentQRText = R"({"ip":")" + s.ip +
+                            R"(","port":)" + std::to_string(s.port) +
+                            R"(,"passkey":")" + srv.getPasskey() +
+                            R"(","certPin":")" + srv.getCertPin() + R"("})";
             InvalidateRect(hWnd, nullptr, TRUE);
             break;
         }
@@ -271,7 +274,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     hMainWnd = hWnd;
 
-    bool settingsExist = SettingsManager::getInstance().load();
+    bool settingsExist = SettingsManager::getInstance().hasSettings();
 
     CreateWindowW(L"BUTTON", L"Запустить сервер", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
                   10, 10, 150, 30, hWnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDB_START_SERVER)), hInstance, nullptr);

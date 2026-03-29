@@ -21,6 +21,7 @@
 #include <algorithm>
 #include "../include/WSErrors.h"
 #include "../include/WSServerThread.h"
+#include "../include/SSLCertManager.h"
 #include "../include/NetworkUtils.h"
 
 WSServerThread::WSServerThread() {
@@ -86,9 +87,20 @@ int WSServerThread::run(const std::string &address, const int &port)
 
     try
     {
-
-
         boost::system::error_code ec;
+
+        // Генерируем самоподписанный сертификат в памяти.
+        // Передаём address, чтобы IP попал в SAN — иначе Android отклонит сертификат.
+        SSLCertManager::CertKeyPair ckp;
+        if (!SSLCertManager::generate(address, ckp)) return ERROR_SSL_CERT_GENERATE_FAILED;
+        currentCertPin = ckp.certPin;
+
+        // Загружаем сертификат и ключ в SSL-контекст из памяти (без файлов)
+        sslCtx.use_certificate_chain(boost::asio::buffer(ckp.certPem), ec);
+        if (ec) return ERROR_SSL_CERT_LOAD_FAILED;
+
+        sslCtx.use_private_key(boost::asio::buffer(ckp.keyPem), ssl::context::pem, ec);
+        if (ec) return ERROR_SSL_KEY_LOAD_FAILED;
 
         stopThread.store(false);
 
@@ -134,6 +146,12 @@ int WSServerThread::run(const std::string &address, const int &port)
 std::string WSServerThread::getPasskey() const
 {
     return this->currentPasskey;
+}
+
+// функция возвращает SHA-256 отпечаток публичного ключа текущего сертификата
+std::string WSServerThread::getCertPin() const
+{
+    return this->currentCertPin;
 }
 
 // функция генерирует новый passkey
@@ -192,7 +210,7 @@ void WSServerThread::serverThread()
                     // чтение информации их веб-сокета, созданного на основе сокета socket.
 
                     threads.emplace_back(std::make_unique<IOThread>(++nextThreadId,
-                        std::move(socket), ec));
+                        std::move(socket), sslCtx, ec));
 
                     if (!ec)
                     {

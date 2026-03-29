@@ -63,10 +63,18 @@ if(NOT Boost_FOUND)
     message(FATAL_ERROR "Boost library not found or version is too old (required 1.75+)")
 endif()
 
+# Ищем библиотеку OpenSSL
+find_package(OpenSSL REQUIRED)
+
+if(NOT OpenSSL_FOUND)
+    message(FATAL_ERROR "OpenSSL library not found")
+endif()
+
 set(SOURCES
         phoneBarcodeScanner.cpp
         src/WSIOThread.cpp
         src/WSServerThread.cpp
+        src/SSLCertManager.cpp
         src/Logger.cpp
         src/QRCodeRenderer.cpp
         src/SettingsDialog.cpp
@@ -88,7 +96,7 @@ target_include_directories(${TARGET} PRIVATE
         src)
 
 target_link_libraries(${TARGET} PRIVATE
-        Boost::system qr)
+        Boost::system qr OpenSSL::SSL OpenSSL::Crypto)
 
 if (WIN32)
     target_compile_definitions(${TARGET} PRIVATE

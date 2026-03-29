@@ -17,23 +17,21 @@
  *
  */
 
-#ifndef WSSERVER_INCLUDE_H
-#define WSSERVER_INCLUDE_H
+#pragma once
 
-#include <boost/asio.hpp>
-#include <boost/asio/ssl.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/ssl.hpp>
-#include <boost/beast/websocket.hpp>
-#include <boost/signals2.hpp>
-#include <boost/system.hpp>
+#include <string>
 
-namespace net = boost::asio;
-namespace beast = boost::beast;
-namespace websocket = beast::websocket;
-namespace ssl = boost::asio::ssl;
-namespace ip = boost::asio::ip;
-namespace signals2 = boost::signals2;
-using tcp = ip::tcp;
+class SSLCertManager {
+public:
+    struct CertKeyPair {
+        std::string certPem;
+        std::string keyPem;
+        // SHA-256 отпечаток публичного ключа (SPKI) в формате OkHttp CertificatePinner: "sha256/<base64>"
+        std::string certPin;
+    };
 
-#endif //WSSERVER_INCLUDE_H
+    // Генерирует самоподписанный RSA-2048 сертификат в памяти.
+    // ip — адрес сервера, добавляется в SAN (обязательно для Android RFC 2818).
+    // Возвращает true при успехе, out заполняется PEM-данными и отпечатком certPin.
+    static bool generate(const std::string &ip, CertKeyPair &out);
+};

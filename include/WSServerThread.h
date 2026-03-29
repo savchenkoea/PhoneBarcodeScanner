@@ -90,6 +90,10 @@ public:
     // функция генерирует новый passkey
     void generateNewPasskey();
 
+    // функция возвращает SHA-256 отпечаток публичного ключа текущего сертификата
+    // в формате OkHttp CertificatePinner: "sha256/<base64>"
+    std::string getCertPin() const;
+
 private:
     // Внутренние свойства объекта:
 
@@ -115,12 +119,18 @@ private:
     // acceptor принимает входящие соединения
     tcp::acceptor acceptor{ioc};
 
+    // SSL-контекст, общий для всех соединений сервера
+    ssl::context sslCtx{ssl::context::tls_server};
+
     // В переменной nextThreadId хранится идентификатор следующего потока ввода-вывода.
     // Начинаем с 1 и для каждого следующего потока увеличиваем на 1
     int nextThreadId{0};
 
     // Текущий passkey для авторизации клиентов
     std::string currentPasskey;
+
+    // SHA-256 отпечаток публичного ключа текущего сертификата (формат OkHttp)
+    std::string currentCertPin;
 
     // Внутренние методы объекта:
 

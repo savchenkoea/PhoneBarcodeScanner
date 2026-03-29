@@ -49,4 +49,8 @@ constexpr int ERROR_WEBSOCKET_IS_NOT_OPEN = 133;
 constexpr int ERROR_THREAD_NOT_FOUND = 134;
 constexpr int ERROR_THREAD_NOT_ACTIVE = 135;
 
+constexpr int ERROR_SSL_CERT_LOAD_FAILED = 140;
+constexpr int ERROR_SSL_KEY_LOAD_FAILED = 141;
+constexpr int ERROR_SSL_CERT_GENERATE_FAILED = 142;
+
 #endif //WSSERVER_ERRORS_H

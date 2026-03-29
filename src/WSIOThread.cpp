@@ -22,20 +22,24 @@
 
 // Конструктор создает веб-сокет ws на основе сокета socket и запускает поток, которые слушает данный веб-сокет.
 // Полученные сообщения передаются в 1С с помощью механизма внешних событий
-IOThread::IOThread(const int id, tcp::socket socket,
+IOThread::IOThread(const int id, tcp::socket socket, ssl::context &ctx,
                    beast::error_code &ec) : threadId(id),
-                                            ws(std::move(socket))
+                                            ws(std::move(socket), ctx)
 {
 
-    // Получаем информацию о подключившемся клиенте
-    tcp::endpoint remote_ep = ws.next_layer().remote_endpoint(ec);
+    // Получаем информацию о подключившемся клиенте (TCP уровень — два слоя вложенности)
+    tcp::endpoint remote_ep = ws.next_layer().next_layer().remote_endpoint(ec);
     if (!ec)
     {
         client_ip = remote_ep.address().to_string();
         client_port = remote_ep.port();
     }
 
-    // выполняем рукопожатие с клиентом
+    // выполняем SSL рукопожатие
+    this->ws.next_layer().handshake(ssl::stream_base::server, ec);
+    if (ec) return;
+
+    // выполняем WebSocket рукопожатие с клиентом
     this->ws.accept(ec);
 
     // если произошла ошибка - выходим
@@ -68,11 +72,11 @@ int IOThread::close()
         // cancel() работает только для async операций.
         // ws.close() здесь вызывать опасно, так как сокет занят в другом потоке.
 
-        // Закрываем прием и передачу данных на уровне TCP
-        this->ws.next_layer().shutdown(tcp::socket::shutdown_both, ec); // NOLINT(*-unused-return-value)
+        // Закрываем прием и передачу данных на уровне TCP (два слоя: SSL → TCP)
+        this->ws.next_layer().next_layer().shutdown(tcp::socket::shutdown_both, ec); // NOLINT(*-unused-return-value)
 
         // Закрываем дескриптор сокета
-        this->ws.next_layer().close(ec); // NOLINT(*-unused-return-value)
+        this->ws.next_layer().next_layer().close(ec); // NOLINT(*-unused-return-value)
     }
 
     // проверяем что поток еще существует

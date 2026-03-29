@@ -37,7 +37,7 @@ public:
     signals2::signal<void(int)> sigOnClosedConnection;
 
     // конструктор экземпляра класса
-    IOThread(int id, tcp::socket socket, beast::error_code &ec);
+    IOThread(int id, tcp::socket socket, ssl::context &ctx, beast::error_code &ec);
 
     // деструктор экземпляра класса
     ~IOThread();
@@ -65,7 +65,7 @@ public:
 
 private:
     // веб-сокет, через который производится обмен данными в данном потоке
-    websocket::stream<tcp::socket> ws;
+    websocket::stream<beast::ssl_stream<tcp::socket>> ws;
 
     // ссылка на поток, принимающий сообщения из веб-сокета
     std::thread t;

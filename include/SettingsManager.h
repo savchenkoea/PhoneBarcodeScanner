@@ -21,42 +21,74 @@ public:
     const AppSettings& getSettings() const { return settings; }
     void setSettings(const AppSettings& newSettings) { settings = newSettings; }
 
+    // Возвращает true, если настройки были найдены в реестре при запуске
+    bool hasSettings() const { return settingsFound; }
+
     void save() {
-        std::string path = getSettingsFilePath();
-        WritePrivateProfileStringA("Server", "IP", settings.ip.c_str(), path.c_str());
-        WritePrivateProfileStringA("Server", "Port", std::to_string(settings.port).c_str(), path.c_str());
-        WritePrivateProfileStringA("Data", "Prefix", std::to_string(settings.prefix).c_str(), path.c_str());
-        WritePrivateProfileStringA("Data", "Postfix1", std::to_string(settings.postfix1).c_str(), path.c_str());
-        WritePrivateProfileStringA("Data", "Postfix2", std::to_string(settings.postfix2).c_str(), path.c_str());
+        HKEY hKey = nullptr;
+        if (RegCreateKeyExA(HKEY_CURRENT_USER, REG_KEY_PATH, 0, nullptr,
+                            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr,
+                            &hKey, nullptr) != ERROR_SUCCESS) return;
+
+        RegSetValueExA(hKey, "IP", 0, REG_SZ,
+            reinterpret_cast<const BYTE*>(settings.ip.c_str()),
+            static_cast<DWORD>(settings.ip.size() + 1));
+
+        DWORD val;
+        val = static_cast<DWORD>(settings.port);
+        RegSetValueExA(hKey, "Port", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&val), sizeof(val));
+        val = static_cast<DWORD>(settings.prefix);
+        RegSetValueExA(hKey, "Prefix", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&val), sizeof(val));
+        val = static_cast<DWORD>(settings.postfix1);
+        RegSetValueExA(hKey, "Postfix1", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&val), sizeof(val));
+        val = static_cast<DWORD>(settings.postfix2);
+        RegSetValueExA(hKey, "Postfix2", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&val), sizeof(val));
+
+        RegCloseKey(hKey);
     }
 
     bool load() {
-        std::string path = getSettingsFilePath();
-        if (GetFileAttributesA(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            return false;
-        }
-        char ipBuf[256];
-        GetPrivateProfileStringA("Server", "IP", "127.0.0.1", ipBuf, sizeof(ipBuf), path.c_str());
-        settings.ip = ipBuf;
-        settings.port = GetPrivateProfileIntA("Server", "Port", 10001, path.c_str());
-        settings.prefix = GetPrivateProfileIntA("Data", "Prefix", 0, path.c_str());
-        settings.postfix1 = GetPrivateProfileIntA("Data", "Postfix1", 13, path.c_str());
-        settings.postfix2 = GetPrivateProfileIntA("Data", "Postfix2", 0, path.c_str());
+        HKEY hKey = nullptr;
+        if (RegOpenKeyExA(HKEY_CURRENT_USER, REG_KEY_PATH, 0,
+                          KEY_QUERY_VALUE, &hKey) != ERROR_SUCCESS) return false;
+
+        char ipBuf[256] = {};
+        DWORD ipBufSize = sizeof(ipBuf);
+        DWORD type = REG_SZ;
+        if (RegQueryValueExA(hKey, "IP", nullptr, &type,
+                             reinterpret_cast<BYTE*>(ipBuf), &ipBufSize) == ERROR_SUCCESS)
+            settings.ip = ipBuf;
+
+        DWORD val = 0;
+        DWORD valSize = sizeof(val);
+        type = REG_DWORD;
+        if (RegQueryValueExA(hKey, "Port", nullptr, &type,
+                             reinterpret_cast<BYTE*>(&val), &valSize) == ERROR_SUCCESS)
+            settings.port = static_cast<int>(val);
+
+        val = 0; valSize = sizeof(val);
+        if (RegQueryValueExA(hKey, "Prefix", nullptr, &type,
+                             reinterpret_cast<BYTE*>(&val), &valSize) == ERROR_SUCCESS)
+            settings.prefix = static_cast<int>(val);
+
+        val = 0; valSize = sizeof(val);
+        if (RegQueryValueExA(hKey, "Postfix1", nullptr, &type,
+                             reinterpret_cast<BYTE*>(&val), &valSize) == ERROR_SUCCESS)
+            settings.postfix1 = static_cast<int>(val);
+
+        val = 0; valSize = sizeof(val);
+        if (RegQueryValueExA(hKey, "Postfix2", nullptr, &type,
+                             reinterpret_cast<BYTE*>(&val), &valSize) == ERROR_SUCCESS)
+            settings.postfix2 = static_cast<int>(val);
+
+        RegCloseKey(hKey);
         return true;
     }
 
 private:
-    SettingsManager() { load(); }
+    static constexpr char REG_KEY_PATH[] = "Software\\PhoneBarcodeScanner";
+
+    SettingsManager() : settingsFound(load()) {}
     AppSettings settings;
-
-    std::string getExeDirectory() {
-        char buffer[MAX_PATH];
-        GetModuleFileNameA(nullptr, buffer, MAX_PATH);
-        std::string path(buffer);
-        return path.substr(0, path.find_last_of("\\/"));
-    }
-
-    std::string getSettingsFilePath() {
-        return getExeDirectory() + "\\settings.ini";
-    }
+    bool settingsFound = false;
 };
