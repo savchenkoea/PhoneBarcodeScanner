@@ -38,8 +38,9 @@ void CommandHandler::HandleData(int id, const std::string& data, WSServerThread&
         }
 
         if (command == "scan") {
-            Logger::PostLogMessage("Данные от " + std::to_string(id) + ": " + payload);
-            const std::wstring wideData = StringUtils::Utf8ToWide(payload);
+            const std::string decoded = StringUtils::Base64Decode(payload);
+            Logger::PostLogMessage("Данные от " + std::to_string(id) + ": " + decoded);
+            const std::wstring wideData = StringUtils::Utf8ToWide(decoded);
             const auto& s = SettingsManager::getInstance().getSettings();
             InputEmulator::SendString(wideData, s.prefix, s.postfix1, s.postfix2);
         } else if (command == "heartbeat") {
