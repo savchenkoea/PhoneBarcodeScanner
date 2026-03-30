@@ -1,0 +1,4 @@
+#ifndef RESOURCE_H
+#define RESOURCE_H
+#define IDI_MAIN_ICON 101
+#endif

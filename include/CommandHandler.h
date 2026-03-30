@@ -2,7 +2,7 @@
 #define COMMAND_HANDLER_H
 
 #include <string>
-#include "WSServerThread.h"
+#include <WSServerThread.h>
 
 extern HWND hMainWnd;
 extern const int WM_MINIMIZE_TO_TRAY;

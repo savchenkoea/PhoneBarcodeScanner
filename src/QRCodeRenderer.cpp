@@ -1,5 +1,6 @@
-#include "QRCodeRenderer.h"
 #include <qrencode.h>
+#include <QRCodeRenderer.h>
+#include <version.h>
 
 void QRCodeRenderer::DrawQrCode(HWND hWnd, HDC hdc, const std::string& text) {
     RECT rcClient;
@@ -19,6 +20,15 @@ void QRCodeRenderer::DrawQrCode(HWND hWnd, HDC hdc, const std::string& text) {
     auto hOldFont = static_cast<HFONT>(SelectObject(hdc, hFont));
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(0, 0, 0));
+
+    // Версия в правом нижнем углу окна
+    {
+        wchar_t verBuf[64];
+        wsprintfW(verBuf, L"версия: %d.%d.%d", VERSION_MAJOR, VERSION_MINOR, BUILD_NUMBER);
+        constexpr int verMargin = 6;
+        RECT rcVer = { xStart, rcClient.bottom - 30, rcClient.right - verMargin, rcClient.bottom - verMargin };
+        DrawTextW(hdc, verBuf, -1, &rcVer, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
+    }
 
     if (text.empty()) {
         const wchar_t* msg = L"Для начала работы нажмите кнопку \"Запустить сервер\"";
@@ -41,10 +51,13 @@ void QRCodeRenderer::DrawQrCode(HWND hWnd, HDC hdc, const std::string& text) {
         // Рисуем пояснительный текст над QR-кодом
         const wchar_t* hintText = L"Отсканируйте QR код в приложении на смартфоне для подключения";
         RECT rcText = { xStart, yStart, xStart + qrDrawSize, yStart + 80 };
-        
+        DrawTextW(hdc, hintText, -1, &rcText, DT_CALCRECT | DT_CENTER | DT_WORDBREAK);
+        const int textHeight = rcText.bottom - rcText.top;
+        rcText = { xStart, yStart, xStart + qrDrawSize, yStart + textHeight };
         DrawTextW(hdc, hintText, -1, &rcText, DT_CENTER | DT_WORDBREAK | DT_TOP);
-        
-        yStart = 110;
+
+        constexpr int textQrGap = 8;
+        yStart = yStart + textHeight + textQrGap;
         
         // Quiet zone (свободная зона) вокруг QR-кода должна быть минимум 4 модуля
         constexpr int border = 4;

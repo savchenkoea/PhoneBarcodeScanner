@@ -80,6 +80,10 @@ set(SOURCES
         src/SettingsDialog.cpp
         src/CommandHandler.cpp)
 
+if (WIN32)
+    list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/assets/app.rc)
+endif()
+
 add_library(qr STATIC IMPORTED)
 set_target_properties(qr PROPERTIES
         IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/qrencode/qrencode_${TARGET_ARCH}.lib)

@@ -3,10 +3,10 @@
 #endif
 #include <windows.h>
 #include <winsock2.h>
-#include "SettingsDialog.h"
-#include "SettingsManager.h"
-#include "NetworkUtils.h"
-#include "StringUtils.h"
+#include <SettingsDialog.h>
+#include <SettingsManager.h>
+#include <NetworkUtils.h>
+#include <StringUtils.h>
 #include <string>
 
 static LRESULT CALLBACK SettingsDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {

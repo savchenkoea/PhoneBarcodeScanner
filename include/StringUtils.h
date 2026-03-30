@@ -1,7 +1,7 @@
-#pragma once
+#ifndef INCLUDE_STRINGUTILS_H
+#define INCLUDE_STRINGUTILS_H
 
 #include <string>
-#include <vector>
 #include <stdexcept>
 #include <windows.h>
 
@@ -77,3 +77,5 @@ namespace StringUtils {
         return utf8;
     }
 }
+
+#endif

@@ -1,11 +1,12 @@
-#include "CommandHandler.h"
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
-#include "SettingsManager.h"
-#include "StringUtils.h"
-#include "InputEmulator.h"
-#include "Logger.h"
 #include <sstream>
+
+#include <CommandHandler.h>
+#include <SettingsManager.h>
+#include <StringUtils.h>
+#include <InputEmulator.h>
+#include <Logger.h>
 
 void CommandHandler::HandleData(int id, const std::string& data, WSServerThread& srv) {
     try {

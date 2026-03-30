@@ -26,7 +26,7 @@
 #include <thread>
 #include <string>
 
-#include "WSIOThread.h"
+#include <WSIOThread.h>
 
 class WSConnectionInfo {
 public:

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef INCLUDE_NETWORKUTILS_H
+#define INCLUDE_NETWORKUTILS_H
 
 #include <string>
 #include <vector>
@@ -74,3 +75,5 @@ namespace NetworkUtils {
         return result;
     }
 }
+
+#endif

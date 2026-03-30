@@ -10,14 +10,15 @@
 #include <vector>
 #include <strsafe.h>
 
-#include "WSErrors.h"
-#include "WSServerThread.h"
-#include "SettingsManager.h"
-#include "NetworkUtils.h"
-#include "Logger.h"
-#include "QRCodeRenderer.h"
-#include "SettingsDialog.h"
-#include "CommandHandler.h"
+#include <WSErrors.h>
+#include <WSServerThread.h>
+#include <SettingsManager.h>
+#include <NetworkUtils.h>
+#include <Logger.h>
+#include <QRCodeRenderer.h>
+#include <SettingsDialog.h>
+#include <CommandHandler.h>
+#include <Resource.h>
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -258,12 +259,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = 0;
     wcex.hInstance = hInstance;
-    wcex.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_MAIN_ICON));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground = reinterpret_cast<HBRUSH>((COLOR_WINDOW + 1));
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = szWindowClass;
-    wcex.hIconSm = LoadIcon(nullptr, IDI_APPLICATION);
+    wcex.hIconSm = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_MAIN_ICON));
 
     if (!RegisterClassEx(&wcex)) return 1;
 
@@ -273,6 +274,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!hWnd) return 1;
 
     hMainWnd = hWnd;
+
+    DeleteMenu(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND);
 
     bool settingsExist = SettingsManager::getInstance().hasSettings();
 
@@ -324,7 +327,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     nid.uID = 1;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_MAIN_ICON));
     lstrcpyn(nid.szTip, TEXT("Phone Barcode Scanner"), ARRAYSIZE(nid.szTip));
     Shell_NotifyIcon(NIM_ADD, &nid);
 

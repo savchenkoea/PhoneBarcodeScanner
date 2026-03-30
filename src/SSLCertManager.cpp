@@ -17,7 +17,7 @@
  *
  */
 
-#include "../include/SSLCertManager.h"
+#include <SSLCertManager.h>
 
 // Обязательно для Windows: связывает CRT приложения с CRT внутри OpenSSL DLL.
 // Должен быть включён ровно в один .cpp файл проекта.
@@ -30,7 +30,6 @@
 #include <openssl/pem.h>
 
 #include <memory>
-#include <cstdio>
 
 // ---------------------------------------------------------------------------
 // RAII-обёртки для OpenSSL-ресурсов.

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef INCLUDE_INPUTEMULATOR_H
+#define INCLUDE_INPUTEMULATOR_H
 
 #include <windows.h>
 #include <string>
@@ -48,3 +49,5 @@ namespace InputEmulator {
         if (postfix2 > 0) SendUnicodeChar(static_cast<wchar_t>(postfix2));
     }
 }
+
+#endif

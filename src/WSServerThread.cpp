@@ -19,10 +19,10 @@
 
 #include <random>
 #include <algorithm>
-#include "../include/WSErrors.h"
-#include "../include/WSServerThread.h"
-#include "../include/SSLCertManager.h"
-#include "../include/NetworkUtils.h"
+#include <WSErrors.h>
+#include <WSServerThread.h>
+#include <SSLCertManager.h>
+#include <NetworkUtils.h>
 
 WSServerThread::WSServerThread() {
     this->isRunning.store(false);

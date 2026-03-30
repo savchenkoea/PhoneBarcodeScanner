@@ -1,4 +1,5 @@
-#pragma once
+#ifndef INCLUDE_SETTINGSMANAGER_H
+#define INCLUDE_SETTINGSMANAGER_H
 
 #include <string>
 #include <windows.h>
@@ -92,3 +93,5 @@ private:
     AppSettings settings;
     bool settingsFound = false;
 };
+
+#endif

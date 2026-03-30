@@ -1,6 +1,7 @@
-#include "Logger.h"
-#include "StringUtils.h"
 #include <memory>
+
+#include <Logger.h>
+#include <StringUtils.h>
 
 HWND Logger::m_hLogEdit = nullptr;
 HWND Logger::m_hMainWnd = nullptr;

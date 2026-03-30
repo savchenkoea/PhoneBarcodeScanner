@@ -17,7 +17,8 @@
  *
  */
 
-#pragma once
+#ifndef INCLUDE_SSLCERTMANAGER_H
+#define INCLUDE_SSLCERTMANAGER_H
 
 #include <string>
 
@@ -35,3 +36,5 @@ public:
     // Возвращает true при успехе, out заполняется PEM-данными и отпечатком certPin.
     static bool generate(const std::string &ip, CertKeyPair &out);
 };
+
+#endif
