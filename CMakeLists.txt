@@ -3,6 +3,9 @@ cmake_policy(SET CMP0167 NEW)
 set(CMAKE_CXX_STANDARD 17)
 set(TARGET PhoneBarcodeScanner)
 
+# Статический рантайм MSVC (/MT для Release, /MTd для Debug)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 # Получение номера сборки из Git (количество коммитов)
 execute_process(
         COMMAND git rev-list --count HEAD
